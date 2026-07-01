@@ -1,6 +1,7 @@
 import json
 import os
 import time
+import threading
 
 from dotenv import load_dotenv
 from google import genai
@@ -59,6 +60,7 @@ class AssistantManager:
         self.client = genai.Client(api_key=api_key or os.getenv("GEMINI_API_KEY"))
         self.state_file = state_file
         self.state = self._load_state()
+        self.lock = threading.Lock()
 
     def _load_state(self):
         if os.path.exists(self.state_file):
@@ -70,7 +72,7 @@ class AssistantManager:
         return {
             "provider": "gemini",
             "file_search_store_name": None,
-            "model": "gemini-2.5-flash",
+            "model": "gemini-3.1-flash-lite",
             "articles": {},
         }
 
@@ -87,6 +89,8 @@ class AssistantManager:
                 return store.name
             except Exception:
                 print("Saved Gemini File Search Store not found. Creating a new one...")
+                # Clear local article cache since we are starting with a brand new empty store
+                self.state["articles"] = {}
 
         store = self.client.file_search_stores.create(
             config=types.CreateFileSearchStoreConfig(display_name=display_name)
@@ -101,12 +105,12 @@ class AssistantManager:
         Gemini does not have a persistent Assistant resource for this flow.
         The model, system prompt, and File Search Store are supplied at request time.
         """
-        self.state["model"] = self.state.get("model") or "gemini-2.5-flash"
+        self.state["model"] = self.state.get("model") or "gemini-3.1-flash-lite"
         self.state["file_search_store_name"] = vector_store_id
         self.save_state()
         return self.state["model"]
 
-    def _wait_for_operation(self, operation, timeout_seconds=180, poll_seconds=5):
+    def _wait_for_operation(self, operation, timeout_seconds=300, poll_seconds=5):
         deadline = time.time() + timeout_seconds
         while not getattr(operation, "done", False):
             if time.time() >= deadline:
@@ -190,19 +194,21 @@ class AssistantManager:
         return last_counts
 
     def sync_article(self, slug, filepath, content_hash, vector_store_id, metadata=None):
-        article_state = self.state["articles"].get(slug)
+        with self.lock:
+            article_state = self.state["articles"].get(slug)
         metadata = metadata or {}
         metadata["slug"] = slug
 
         if not article_state:
             document_name = self.upload_file_to_vector_store(filepath, vector_store_id, metadata)
-            self.state["articles"][slug] = {
-                "hash": content_hash,
-                "document_name": document_name,
-                "filepath": filepath,
-                **metadata,
-            }
-            self.save_state()
+            with self.lock:
+                self.state["articles"][slug] = {
+                    "hash": content_hash,
+                    "document_name": document_name,
+                    "filepath": filepath,
+                    **metadata,
+                }
+                self.save_state()
             return "added"
 
         if article_state.get("hash") != content_hash:
@@ -211,13 +217,14 @@ class AssistantManager:
                 self.delete_file_from_assistant(old_document_name)
 
             document_name = self.upload_file_to_vector_store(filepath, vector_store_id, metadata)
-            self.state["articles"][slug] = {
-                "hash": content_hash,
-                "document_name": document_name,
-                "filepath": filepath,
-                **metadata,
-            }
-            self.save_state()
+            with self.lock:
+                self.state["articles"][slug] = {
+                    "hash": content_hash,
+                    "document_name": document_name,
+                    "filepath": filepath,
+                    **metadata,
+                }
+                self.save_state()
             return "updated"
 
         return "skipped"

@@ -60,7 +60,7 @@ def classify_question(client, message: str) -> str:
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3.1-flash-lite",
                 contents=message,
                 config=types.GenerateContentConfig(
                     system_instruction=CLASSIFICATION_SYSTEM_PROMPT,
@@ -89,7 +89,7 @@ def classify_question(client, message: str) -> str:
     return "UNRELATED"
 
 
-def handle_query(client, message: str, vector_store_name: str, model_name: str = "gemini-2.5-flash"):
+def handle_query(client, message: str, vector_store_name: str, model_name: str = "gemini-3.1-flash-lite"):
     category = classify_question(client, message)
     
     if category == "PRODUCT_SUPPORT":

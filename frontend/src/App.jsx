@@ -186,20 +186,6 @@ function App() {
       role: 'assistant',
       content: 'Hello! I am **OptiBot**, the customer-support assistant for OptiSigns. Ask me anything about configuring screens, apps, or troubleshooting player issues!',
       sources: []
-    },
-    {
-      id: 'mock-q',
-      role: 'user',
-      content: 'How do I add a YouTube video?'
-    },
-    {
-      id: 'mock-a',
-      role: 'assistant',
-      content: 'To add a YouTube video to OptiSigns, follow these steps:\n* Log in to your OptiSigns portal at app.optisigns.com.\n* Navigate to **Files/Assets** and click on **App**.\n* Select **YouTube** or **YouTube Live** from the app options.\n* Enter a **Name** and paste the direct **YouTube URL**.\n* Click **Save**.\n\nArticle URL: https://support.optisigns.com/hc/en-us/articles/360051014713-How-to-use-YouTube-with-OptiSigns',
-      sources: [
-        'How to use YouTube with OptiSigns (ID: 360051014713)',
-        'OptiSigns App Store overview'
-      ]
     }
   ]);
   
@@ -241,7 +227,7 @@ function App() {
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
 
   // Load sync stats and list of ingested articles
-  useEffect(() => {
+  const refreshStatus = () => {
     fetch('/api/status')
       .then(res => res.json())
       .then(data => {
@@ -264,6 +250,10 @@ function App() {
           { title: "Getting Started with Designer", article_id: 42087942047379, source_url: "https://support.optisigns.com/hc/en-us/articles/42087942047379" }
         ]);
       });
+  };
+
+  useEffect(() => {
+    refreshStatus();
   }, []);
 
   const scrollToBottom = () => {
@@ -364,66 +354,103 @@ function App() {
         setIsLoading(false);
       }, 1000);
     } finally {
-      if (isLoading) setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
   // --- Ingestion Pipeline Simulator ---
-  const runIngestionPipeline = (docName, type) => {
+  // --- Ingestion Pipeline Simulator ---
+  const runIngestionPipeline = async (docName, type, payload = null) => {
     setIsIngesting(true);
     
     // Reset steps
     setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
 
     let currentStepIdx = 0;
+    
+    // Set first step as processing
+    setPipelineSteps(prev => prev.map((s, idx) => idx === 0 ? { ...s, status: 'processing' } : s));
 
-    const runNextStep = () => {
-      if (currentStepIdx < pipelineSteps.length) {
-        // Mark current as processing, previous as done
+    const visualInterval = setInterval(() => {
+      if (currentStepIdx < pipelineSteps.length - 1) {
         setPipelineSteps(prev => prev.map((s, idx) => {
-          if (idx === currentStepIdx) return { ...s, status: 'processing' };
-          if (idx < currentStepIdx) return { ...s, status: 'done' };
+          if (idx === currentStepIdx) return { ...s, status: 'done' };
+          if (idx === currentStepIdx + 1) return { ...s, status: 'processing' };
           return s;
         }));
-
-        const delay = 600 + Math.random() * 800; // Varying delays for nice visualization
-        setTimeout(() => {
-          currentStepIdx++;
-          runNextStep();
-        }, delay);
-      } else {
-        // All completed successfully
-        setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
-        setIsIngesting(false);
-
-        // Add to Recent ledger
-        const newDoc = {
-          name: docName,
-          type: type,
-          chunks: Math.floor(4 + Math.random() * 15),
-          timestamp: 'Just now',
-          status: 'success'
-        };
-        setRecentIngestions(prev => [newDoc, ...prev]);
-
-        // Add to Ingested lists
-        setArticles(prev => [
-          { title: docName.length > 35 ? docName.substring(0, 35) + '...' : docName, article_id: Math.floor(100000 + Math.random() * 900000), source_url: '#' },
-          ...prev
-        ]);
-
-        // Trigger Success Toast
-        showToastNotification(`Successfully ingested: ${docName}`, 'success');
-
-        // Reset Inputs
-        setSelectedFile(null);
-        setUrlInput('');
-        setManualTitle('');
-        setManualContent('');
+        currentStepIdx++;
       }
-    };
+    }, 600);
 
-    runNextStep();
+    try {
+      let res;
+      if (type === 'manual') {
+        res = await fetch('/api/ingest/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: payload.title, content: payload.content })
+        });
+      } else if (type === 'url') {
+        res = await fetch('/api/ingest/url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: docName })
+        });
+      } else if (type === 'file') {
+        const formData = new FormData();
+        formData.append('file', payload.file);
+        res = await fetch('/api/ingest/file', {
+          method: 'POST',
+          body: formData
+        });
+      }
+
+      clearInterval(visualInterval);
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Failed to ingest document');
+      }
+
+      const data = await res.json();
+
+      // All completed successfully
+      setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+      setIsIngesting(false);
+
+      // Add to Recent ledger
+      const newDoc = {
+        name: docName,
+        type: type,
+        chunks: Math.floor(4 + Math.random() * 15),
+        timestamp: 'Just now',
+        status: 'success'
+      };
+      setRecentIngestions(prev => [newDoc, ...prev]);
+
+      // Trigger Success Toast
+      showToastNotification(`Successfully ingested: ${docName}`, 'success');
+
+      // Reset Inputs
+      setSelectedFile(null);
+      setUrlInput('');
+      setManualTitle('');
+      setManualContent('');
+
+      // Refresh status list to show new document
+      refreshStatus();
+    } catch (error) {
+      clearInterval(visualInterval);
+      setIsIngesting(false);
+      
+      // Mark current step as failed
+      setPipelineSteps(prev => prev.map((s, idx) => {
+        if (idx === currentStepIdx) return { ...s, status: 'failed' };
+        return s;
+      }));
+      
+      showToastNotification(error.message || 'Ingestion failed', 'error');
+    }
   };
 
   const showToastNotification = (message, type = 'success') => {
@@ -436,7 +463,7 @@ function App() {
   const handleFileUpload = (e) => {
     e.preventDefault();
     if (!selectedFile || isIngesting) return;
-    runIngestionPipeline(selectedFile.name, 'file');
+    runIngestionPipeline(selectedFile.name, 'file', { file: selectedFile });
   };
 
   const handleUrlIngestion = (e) => {
@@ -448,7 +475,7 @@ function App() {
   const handleManualIngestion = (e) => {
     e.preventDefault();
     if (!manualTitle.trim() || !manualContent.trim() || isIngesting) return;
-    runIngestionPipeline(manualTitle.trim(), 'manual');
+    runIngestionPipeline(manualTitle.trim(), 'manual', { title: manualTitle.trim(), content: manualContent.trim() });
   };
 
   // Drag and drop events helper
@@ -586,7 +613,7 @@ function App() {
               </span>
             </div>
             <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
-              gemini-2.5-flash
+              gemini-3.1-flash-lite
             </div>
           </header>
 

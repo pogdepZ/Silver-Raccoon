@@ -53,36 +53,59 @@ def main():
         print(f"ERROR: Failed to fetch articles from Zendesk: {e}")
         sys.exit(1)
         
-    # 4. Sync articles (delta logic)
+    # 4. Sync articles (delta logic in parallel)
     added_count = 0
     updated_count = 0
     skipped_count = 0
     
     current_slugs = []
     
+    # Save all markdown files first, collect metadata for batch parallel execution
+    tasks = []
     for idx, article in enumerate(articles):
         try:
             filepath, slug, content, content_hash = save_article_to_markdown(article)
             current_slugs.append(slug)
-            
             metadata = {
                 "article_id": article.get("id"),
                 "title": article.get("title") or article.get("name"),
                 "source_url": article.get("html_url"),
                 "updated_at": article.get("updated_at"),
             }
-            result = manager.sync_article(slug, filepath, content_hash, vs_id, metadata)
-            if result == "added":
-                print(f"[{idx+1}/{len(articles)}] ADDED: {slug}")
-                added_count += 1
-            elif result == "updated":
-                print(f"[{idx+1}/{len(articles)}] UPDATED: {slug}")
-                updated_count += 1
-            else:
-                # skipped
-                skipped_count += 1
+            tasks.append((idx, slug, filepath, content_hash, metadata))
         except Exception as e:
-            print(f"ERROR: Failed to sync article {article.get('id')}: {e}")
+            print(f"ERROR: Failed to prepare article {article.get('id')}: {e}")
+
+    # Use ThreadPoolExecutor to upload and index concurrently
+    max_workers = 8
+    print(f"Starting parallel sync of articles using {max_workers} threads...")
+    
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        futures = {
+            executor.submit(
+                manager.sync_article, slug, filepath, content_hash, vs_id, metadata
+            ): (idx, slug)
+            for idx, slug, filepath, content_hash, metadata in tasks
+        }
+        
+        for future in as_completed(futures):
+            idx, slug = futures[future]
+            try:
+                result = future.result()
+                if result == "added":
+                    print(f"[{idx+1}/{len(articles)}] ADDED: {slug}")
+                    added_count += 1
+                elif result == "updated":
+                    print(f"[{idx+1}/{len(articles)}] UPDATED: {slug}")
+                    updated_count += 1
+                else:
+                    # skipped
+                    skipped_count += 1
+            except Exception as e:
+                print(f"[{idx+1}/{len(articles)}] ERROR syncing article {slug}: {e}")
             
     # 5. Clean up removed articles
     print("Checking for deleted articles...")

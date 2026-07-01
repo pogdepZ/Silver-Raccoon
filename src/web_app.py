@@ -1,13 +1,18 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import shutil
+import hashlib
+import random
+import re
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from src.query_router import handle_query
+from src.ai_sync import AssistantManager
 
 load_dotenv()
 
@@ -126,6 +131,218 @@ def chat_endpoint(request: ChatRequest):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
+
+class ManualIngestRequest(BaseModel):
+    title: str
+    content: str
+
+@app.post("/api/ingest/manual")
+def ingest_manual(request: ManualIngestRequest):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
+        
+    state_path = "gemini_state.json"
+    if not os.path.exists(state_path):
+        raise HTTPException(status_code=400, detail="gemini_state.json not found. Please sync first.")
+        
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            vector_store_name = state.get("file_search_store_name")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
+        
+    if not vector_store_name:
+        raise HTTPException(status_code=400, detail="Gemini Vector Store not initialized in state.json.")
+    
+    slug_title = re.sub(r'[^a-zA-Z0-9\s-]', '', request.title).strip().replace(' ', '-')
+    slug_title = re.sub(r'-+', '-', slug_title).lower()
+    
+    article_id = random.randint(100000, 999999)
+    slug = f"manual-{article_id}-{slug_title}"[:80]
+    
+    output_dir = "data/articles"
+    os.makedirs(output_dir, exist_ok=True)
+    filepath = os.path.join(output_dir, f"{slug}.md")
+    
+    from datetime import datetime, timezone
+    updated_at = datetime.now(timezone.utc).isoformat()
+    
+    header = f"---\ntitle: \"{request.title}\"\nid: {article_id}\nupdated_at: \"{updated_at}\"\n---\n\n"
+    citation_block = f"\n\n---\nArticle URL: #\n"
+    full_content = header + request.content + citation_block
+    
+    content_hash = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
+    
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(full_content)
+        
+    try:
+        manager = AssistantManager(api_key=api_key)
+        metadata = {
+            "article_id": article_id,
+            "title": request.title,
+            "source_url": "#",
+            "updated_at": updated_at,
+        }
+        result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
+        return {
+            "status": "success",
+            "slug": slug,
+            "result": result,
+            "article_id": article_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync manual article to Gemini: {str(e)}")
+
+class UrlIngestRequest(BaseModel):
+    url: str
+
+@app.post("/api/ingest/url")
+def ingest_url(request: UrlIngestRequest):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
+        
+    state_path = "gemini_state.json"
+    if not os.path.exists(state_path):
+        raise HTTPException(status_code=400, detail="gemini_state.json not found. Please sync first.")
+        
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            vector_store_name = state.get("file_search_store_name")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
+        
+    if not vector_store_name:
+        raise HTTPException(status_code=400, detail="Gemini Vector Store not initialized in state.json.")
+        
+    import requests
+    from bs4 import BeautifulSoup
+    from markdownify import markdownify as md
+    
+    try:
+        res = requests.get(request.url, timeout=15)
+        res.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
+        
+    soup = BeautifulSoup(res.text, "html.parser")
+    title = soup.title.string.strip() if soup.title else "Scraped Article"
+    
+    body_content = ""
+    body_tag = soup.body
+    if body_tag:
+        for tag in body_tag(["script", "style", "nav", "footer", "header"]):
+            tag.decompose()
+        body_content = md(str(body_tag), heading_style="ATX").strip()
+    else:
+        body_content = md(res.text, heading_style="ATX").strip()
+        
+    article_id = random.randint(100000, 999999)
+    slug_title = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().replace(' ', '-')
+    slug_title = re.sub(r'-+', '-', slug_title).lower()
+    slug = f"url-{article_id}-{slug_title}"[:80]
+    
+    output_dir = "data/articles"
+    os.makedirs(output_dir, exist_ok=True)
+    filepath = os.path.join(output_dir, f"{slug}.md")
+    
+    from datetime import datetime, timezone
+    updated_at = datetime.now(timezone.utc).isoformat()
+    
+    header = f"---\ntitle: \"{title}\"\nid: {article_id}\nupdated_at: \"{updated_at}\"\n---\n\n"
+    citation_block = f"\n\n---\nArticle URL: {request.url}\n"
+    full_content = header + body_content + citation_block
+    
+    content_hash = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
+    
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(full_content)
+        
+    try:
+        manager = AssistantManager(api_key=api_key)
+        metadata = {
+            "article_id": article_id,
+            "title": title,
+            "source_url": request.url,
+            "updated_at": updated_at,
+        }
+        result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
+        return {
+            "status": "success",
+            "slug": slug,
+            "result": result,
+            "article_id": article_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync scraped URL article to Gemini: {str(e)}")
+
+@app.post("/api/ingest/file")
+def ingest_file(file: UploadFile = File(...)):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
+        
+    state_path = "gemini_state.json"
+    if not os.path.exists(state_path):
+        raise HTTPException(status_code=400, detail="gemini_state.json not found. Please sync first.")
+        
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            vector_store_name = state.get("file_search_store_name")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
+        
+    if not vector_store_name:
+        raise HTTPException(status_code=400, detail="Gemini Vector Store not initialized in state.json.")
+        
+    output_dir = "data/articles"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    article_id = random.randint(100000, 999999)
+    
+    filename = file.filename or "uploaded-file.txt"
+    name_part, ext = os.path.splitext(filename)
+    if ext.lower() not in [".txt", ".md", ".pdf"]:
+        raise HTTPException(status_code=400, detail="Unsupported file format. Only PDF, MD, TXT are supported.")
+        
+    slug_name = re.sub(r'[^a-zA-Z0-9\s-]', '', name_part).strip().replace(' ', '-')
+    slug_name = re.sub(r'-+', '-', slug_name).lower()
+    slug = f"file-{article_id}-{slug_name}"[:80]
+    
+    saved_filename = f"{slug}{ext}"
+    filepath = os.path.join(output_dir, saved_filename)
+    
+    contents = file.file.read()
+    content_hash = hashlib.sha256(contents).hexdigest()
+    
+    file.file.seek(0)
+    with open(filepath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        manager = AssistantManager(api_key=api_key)
+        from datetime import datetime, timezone
+        updated_at = datetime.now(timezone.utc).isoformat()
+        metadata = {
+            "article_id": article_id,
+            "title": name_part,
+            "source_url": "#",
+            "updated_at": updated_at,
+        }
+        result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
+        return {
+            "status": "success",
+            "slug": slug,
+            "result": result,
+            "article_id": article_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync uploaded file to Gemini: {str(e)}")
 
 # Mount static files (HTML, JS, CSS) from the compiled React Vite build
 app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
