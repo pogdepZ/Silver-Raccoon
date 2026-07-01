@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse
@@ -185,6 +186,45 @@ def toggle_article_active(slug: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to toggle article state: {str(e)}")
+
+import subprocess
+@app.post("/api/tests/run")
+def run_unit_tests():
+    try:
+        # Run python test discovery using portably resolved sys.executable interpreter
+        process = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15
+        )
+        
+        # unittest output details reside in stderr, standard logs reside in stdout
+        output = process.stderr + "\n" + process.stdout
+        lines = [line for line in output.split("\n") if line.strip()]
+        
+        formatted_logs = [
+            f"[TEST RUNNER] Initiating Python unittest suite...",
+            f"[TEST RUNNER] Executing: sys.executable -m unittest discover -s tests",
+        ]
+        
+        for line in lines:
+            if "Warning:" in line or "DeprecationWarning" in line:
+                formatted_logs.append(f"[WARN] {line}")
+            elif "Ran " in line:
+                formatted_logs.append(f"[INFO] {line}")
+            elif "OK" in line:
+                formatted_logs.append(f"[SUCCESS] {line} - ALL TESTS PASSED SUCCESSFULLY!")
+            elif "FAILED" in line:
+                formatted_logs.append(f"[ERROR] {line} - SOME TESTS FAILED!")
+            else:
+                formatted_logs.append(f"[TEST] {line}")
+                
+        status = "success" if "OK" in output else "failed"
+        return {"status": status, "logs": formatted_logs}
+    except Exception as e:
+        return {"status": "error", "logs": [f"[ERROR] Failed to run test suite: {str(e)}"]}
 
 def calculate_similarity(query: str, text: str) -> float:
     q_words = set(re.findall(r'\w+', query.lower()))

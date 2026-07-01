@@ -242,6 +242,7 @@ function App() {
   const [activeView, setActiveView] = useState('chat'); // 'chat' or 'knowledge'
   const [ragActive, setRagActive] = useState(true);
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
+  const [testsRunning, setTestsRunning] = useState(false);
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -504,6 +505,41 @@ function App() {
     } catch (e) {
       console.error(e);
       showToastNotification('Failed to toggle article status', 'error');
+    }
+  };
+
+  const handleRunTests = async () => {
+    setTestsRunning(true);
+    setTerminalLogs(prev => [
+      ...prev,
+      `[${new Date().toLocaleTimeString()}] [SYSTEM] Triggered manual test runner execution request...`
+    ]);
+    
+    try {
+      const res = await fetch('/api/tests/run', { method: 'POST' });
+      if (!res.ok) {
+        throw new Error('Backend failed to execute tests');
+      }
+      const data = await res.json();
+      
+      setTerminalLogs(prev => [
+        ...prev,
+        ...data.logs.map(log => `[${new Date().toLocaleTimeString()}] ${log}`)
+      ]);
+      
+      if (data.status === 'success') {
+        showToastNotification('All unit tests executed and PASSED!', 'success');
+      } else {
+        showToastNotification('Unit test run failed. Check terminal logs.', 'error');
+      }
+    } catch (e) {
+      setTerminalLogs(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] [ERROR] Manual test run failed: ${e.message}`
+      ]);
+      showToastNotification('Failed to run test suite', 'error');
+    } finally {
+      setTestsRunning(false);
     }
   };
 
@@ -1670,15 +1706,36 @@ function App() {
               <h2 className="font-semibold text-white text-base sm:text-lg">System Logs</h2>
               <p className="text-xs text-slate-500">Live diagnostics and pipeline execution traces</p>
             </div>
-            <button 
-              onClick={() => setTerminalLogs([
-                `[${new Date().toLocaleTimeString()}] Diagnostics cache cleared.`,
-                'Listening for system operations...'
-              ])}
-              className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-500/30 px-3 py-1.5 rounded bg-red-950/20 transition-all select-none cursor-pointer"
-            >
-              Clear Logs
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={handleRunTests}
+                disabled={testsRunning}
+                className="text-xs text-green-400 hover:text-green-300 border border-green-900/40 hover:border-green-500/30 px-3 py-1.5 rounded bg-green-950/20 transition-all select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                title="Run all 22 python unit tests on the backend"
+              >
+                {testsRunning ? (
+                  <>
+                    <div className="w-3 h-3 rounded-full border border-green-400 border-t-transparent animate-spin" />
+                    <span>Running Tests...</span>
+                  </>
+                ) : (
+                  <>
+                    <ActivityIcon className="w-3.5 h-3.5 text-green-400 font-medium" />
+                    <span>Run Test Suite</span>
+                  </>
+                )}
+              </button>
+              <button 
+                onClick={() => setTerminalLogs([
+                  `[${new Date().toLocaleTimeString()}] Diagnostics cache cleared.`,
+                  'Listening for system operations...'
+                ])}
+                className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-500/30 px-3 py-1.5 rounded bg-red-950/20 transition-all select-none cursor-pointer"
+              >
+                Clear Logs
+              </button>
+            </div>
           </header>
 
           {/* Terminal Console */}
