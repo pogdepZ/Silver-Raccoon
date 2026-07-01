@@ -166,6 +166,20 @@ function DatabaseIcon({ className = "w-4 h-4" }) {
   );
 }
 
+function AudioWaveIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 10v4" />
+      <path d="M6 6v12" />
+      <path d="M9 3v18" />
+      <path d="M12 7v10" />
+      <path d="M15 5v14" />
+      <path d="M18 8v8" />
+      <path d="M21 10v4" />
+    </svg>
+  );
+}
+
 function MenuIcon({ className = "w-5 h-5" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -245,6 +259,10 @@ function App() {
   const [testsRunning, setTestsRunning] = useState(false);
   const [testResults, setTestResults] = useState(null); // null, 'running', 'success', 'failed'
   const [togglingSlugs, setTogglingSlugs] = useState({}); // slug -> 'toggling' | 'deleting' | null
+  const [ttsLanguage, setTtsLanguage] = useState('auto'); // 'auto', 'en-US', 'vi-VN'
+  const [ttsRate, setTtsRate] = useState(1.0); // 0.5 to 2.0
+  const [ttsPitch, setTtsPitch] = useState(1.0); // 0.5 to 1.5
+  const [showTtsSettings, setShowTtsSettings] = useState(false);
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -773,7 +791,41 @@ function App() {
       .substring(0, 350);
       
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'en-US';
+    utterance.rate = ttsRate;
+    utterance.pitch = ttsPitch;
+    
+    // Auto detect or select speaking language
+    let isVietnamese = false;
+    if (ttsLanguage === 'auto') {
+      isVietnamese = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i.test(cleanText);
+    } else if (ttsLanguage === 'vi-VN') {
+      isVietnamese = true;
+    }
+    
+    if (isVietnamese) {
+      utterance.lang = 'vi-VN';
+    } else {
+      utterance.lang = 'en-US';
+    }
+    
+    // Find browser matching speech synthesizers
+    if (window.speechSynthesis.getVoices) {
+      const voices = window.speechSynthesis.getVoices();
+      let selectedVoice = null;
+      
+      if (isVietnamese) {
+        selectedVoice = voices.find(v => v.lang.startsWith('vi') || v.lang.replace('_', '-').startsWith('vi'));
+      } else {
+        selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural')));
+        if (!selectedVoice) {
+          selectedVoice = voices.find(v => v.lang.startsWith('en'));
+        }
+      }
+      
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+    }
     
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
@@ -1148,18 +1200,97 @@ function App() {
 
               {/* Clear Chat & Model Label */}
               <div className="flex items-center gap-3">
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowTtsSettings(!showTtsSettings)}
+                    className={`text-xs flex items-center gap-1 bg-[#2d2d2d] border px-2.5 py-1.5 rounded-lg cursor-pointer transition-all select-none ${
+                      showTtsSettings 
+                        ? 'text-blue-400 border-blue-500/50 bg-blue-950/10' 
+                        : 'text-slate-400 hover:text-white border-[#3d3d3d] hover:border-slate-500'
+                    }`}
+                    title="Text-To-Speech Settings"
+                  >
+                    <AudioWaveIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span>Voice Settings</span>
+                  </button>
+                  
+                  {showTtsSettings && (
+                    <div className="absolute right-0 mt-2 w-64 bg-[#1c1d1f] border border-[#3d3d3d] rounded-xl shadow-2xl p-4 z-50 space-y-4 text-xs select-none">
+                      <div className="border-b border-[#2d2d2d] pb-1.5 flex items-center justify-between">
+                        <span className="font-bold text-white uppercase tracking-wider">Voice Control</span>
+                        <button 
+                          type="button"
+                          onClick={() => setShowTtsSettings(false)}
+                          className="text-slate-500 hover:text-white"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      
+                      {/* Language selection */}
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold block">Language / Accent</label>
+                        <select
+                          value={ttsLanguage}
+                          onChange={(e) => setTtsLanguage(e.target.value)}
+                          className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="auto">Auto-Detect Language</option>
+                          <option value="vi-VN">Tiếng Việt (Vietnam)</option>
+                          <option value="en-US">English (United States)</option>
+                        </select>
+                      </div>
+
+                      {/* Speed rate slider */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-slate-400">
+                          <span className="font-semibold">Speech Speed</span>
+                          <span className="font-mono text-slate-500">{ttsRate.toFixed(1)}x</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="2.0"
+                          step="0.1"
+                          value={ttsRate}
+                          onChange={(e) => setTtsRate(parseFloat(e.target.value))}
+                          className="w-full h-1 bg-[#2d2d2d] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                      </div>
+
+                      {/* Tone pitch slider */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-slate-400">
+                          <span className="font-semibold">Voice Pitch</span>
+                          <span className="font-mono text-slate-500">{ttsPitch.toFixed(1)}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="1.5"
+                          step="0.1"
+                          value={ttsPitch}
+                          onChange={(e) => setTtsPitch(parseFloat(e.target.value))}
+                          className="w-full h-1 bg-[#2d2d2d] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {messages.length > 1 && (
                   <button
                     type="button"
                     onClick={handleClearChat}
-                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-[#2d2d2d] border border-red-900/40 hover:border-red-500/30 px-2.5 py-1 rounded cursor-pointer transition-all select-none"
+                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-[#2d2d2d] border border-red-900/40 hover:border-red-500/30 px-2.5 py-1.5 rounded-lg cursor-pointer transition-all select-none"
                     title="Clear chat history"
                   >
                     <TrashIcon className="w-3.5 h-3.5 text-red-500 shrink-0" />
                     <span className="hidden sm:inline">Clear Chat</span>
                   </button>
                 )}
-                <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded hidden sm:block">
+                <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1.5 rounded-lg hidden sm:block">
                   gemini-3.1-flash-lite
                 </div>
               </div>
