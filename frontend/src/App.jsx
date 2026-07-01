@@ -265,6 +265,29 @@ const formatMarkdown = (text) => {
   }).join('');
 };
 
+const OPTSIGNS_API_PRESETS = [
+  {
+    title: "REST API Gateway & OAuth Authentication Guide",
+    url: "https://support.optisigns.com/hc/en-us/articles/39080869746067-Handle-OAuth-Authentication-using-API-Gateway-Pre-request-Configuration"
+  },
+  {
+    title: "OptiDev Custom Coding App SDK Reference",
+    url: "https://support.optisigns.com/hc/en-us/articles/47616485609491-How-to-Use-the-OptiDev-App"
+  },
+  {
+    title: "YouTube Dashboard App API Configuration",
+    url: "https://support.optisigns.com/hc/en-us/articles/48626115821459-How-to-Use-the-YouTube-Dashboard-App"
+  },
+  {
+    title: "OptiSound API Licensed Background Music Controls",
+    url: "https://support.optisigns.com/hc/en-us/articles/40671590645651-How-to-Play-Licensed-Background-Music-on-Digital-Signs-with-OptiSound"
+  },
+  {
+    title: "Outlook Calendar Shared API & Graph Integration",
+    url: "https://support.optisigns.com/hc/en-us/articles/45619214182803-How-to-Set-Up-an-Outlook-Calendar-App-with-Shared-Permissions"
+  }
+];
+
 function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('chat'); // 'chat' or 'knowledge'
@@ -280,6 +303,8 @@ function App() {
   const [availableVoices, setAvailableVoices] = useState([]);
   const [selectedVoiceName, setSelectedVoiceName] = useState('auto');
   const [autoReadEnabled, setAutoReadEnabled] = useState(true);
+  const [showPresetsSelector, setShowPresetsSelector] = useState(false);
+  const [checkedPresets, setCheckedPresets] = useState({});
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -1026,6 +1051,95 @@ function App() {
     runIngestionPipeline(urlInput.trim(), 'url');
   };
 
+  const handleTogglePreset = (url) => {
+    setCheckedPresets(prev => ({
+      ...prev,
+      [url]: !prev[url]
+    }));
+  };
+
+  const handleSelectAllPresets = () => {
+    const allChecked = {};
+    OPTSIGNS_API_PRESETS.forEach(p => {
+      allChecked[p.url] = true;
+    });
+    setCheckedPresets(allChecked);
+  };
+
+  const handleIngestApiPresets = async () => {
+    const urlsToIngest = Object.keys(checkedPresets).filter(url => checkedPresets[url]);
+    if (urlsToIngest.length === 0) return;
+    
+    setIsIngesting(true);
+    setShowPresetsSelector(false);
+    
+    // Clear terminal steps and set status
+    setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
+    setTerminalLogs(prev => [
+      ...prev,
+      `[${new Date().toLocaleTimeString()}] [BATCH] Starting batch ingestion of ${urlsToIngest.length} API presets...`,
+      `[${new Date().toLocaleTimeString()}] [BATCH] ---------------------------------------------`
+    ]);
+
+    for (let i = 0; i < urlsToIngest.length; i++) {
+      const url = urlsToIngest[i];
+      const preset = OPTSIGNS_API_PRESETS.find(p => p.url === url);
+      const label = preset ? preset.title : "API Document";
+      
+      setTerminalLogs(prev => [
+        ...prev,
+        `\n[${new Date().toLocaleTimeString()}] [BATCH] [${i + 1}/${urlsToIngest.length}] Scrapes: ${label}...`
+      ]);
+
+      try {
+        const res = await fetch('/api/ingest/url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url })
+        });
+        
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Failed to ingest');
+        }
+        
+        const data = await res.json();
+        
+        // Add to Recent ledger
+        const newDoc = {
+          name: url,
+          type: 'url',
+          chunks: 'Computed',
+          timestamp: 'Just now',
+          status: 'success',
+          source_url: url,
+          slug: data.slug || ''
+        };
+        setRecentIngestions(prev => [newDoc, ...prev]);
+
+        setTerminalLogs(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] [SUCCESS] Ingested successfully. Slug: ${data.slug}`
+        ]);
+      } catch (err) {
+        setTerminalLogs(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] [ERROR] Failed: ${label}. Reason: ${err.message}`
+        ]);
+      }
+    }
+
+    setTerminalLogs(prev => [
+      ...prev,
+      `\n[${new Date().toLocaleTimeString()}] [BATCH] ---------------------------------------------`,
+      `[${new Date().toLocaleTimeString()}] [SUCCESS] Batch ingestion complete! Fetching updated list...`
+    ]);
+    
+    setIsIngesting(false);
+    setCheckedPresets({});
+    refreshStatus();
+  };
+
   const handleManualIngestion = (e) => {
     e.preventDefault();
     if (!manualTitle.trim() || !manualContent.trim() || isIngesting) return;
@@ -1644,28 +1758,92 @@ function App() {
 
                 {/* Tab 2: URL Ingestion */}
                 {activeKbTab === 'url' && (
-                  <form onSubmit={handleUrlIngestion} className="space-y-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-400 uppercase">Documentation URL</label>
-                      <input 
-                        type="url" 
-                        value={urlInput}
-                        onChange={(e) => setUrlInput(e.target.value)}
-                        disabled={isIngesting}
-                        placeholder="https://support.optisigns.com/hc/en-us/articles/..."
-                        required
-                        className="w-full bg-[#191919] border border-[#3d3d3d] rounded-lg px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                      />
+                  <div className="space-y-4">
+                    <form onSubmit={handleUrlIngestion} className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-400 uppercase">Documentation URL</label>
+                        <input 
+                          type="url" 
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          disabled={isIngesting}
+                          placeholder="https://support.optisigns.com/hc/en-us/articles/..."
+                          required={!showPresetsSelector}
+                          className="w-full bg-[#191919] border border-[#3d3d3d] rounded-lg px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isIngesting || !urlInput.trim()}
+                        className="w-full bg-[#2563eb] hover:bg-[#1d4ed8] disabled:bg-slate-700 disabled:text-slate-400 text-white font-semibold text-sm py-2.5 rounded-lg shadow-sm transition-all cursor-pointer"
+                      >
+                        {isIngesting ? 'Scraping URL...' : 'Scrape & Ingest'}
+                      </button>
+                    </form>
+
+                    <div className="pt-1.5 flex items-center justify-between text-[11px] border-t border-[#2d2d2d]/60">
+                      <span className="text-slate-500 font-medium">Or use verified documentation presets:</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPresetsSelector(!showPresetsSelector)}
+                        className="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer underline flex items-center gap-1 select-none bg-transparent border-0"
+                      >
+                        {showPresetsSelector ? 'Hide API Presets' : '⚡ Select API Guides'}
+                      </button>
                     </div>
 
-                    <button
-                      type="submit"
-                      disabled={isIngesting || !urlInput.trim()}
-                      className="w-full bg-[#2563eb] hover:bg-[#1d4ed8] disabled:bg-slate-700 disabled:text-slate-400 text-white font-semibold text-sm py-2.5 rounded-lg shadow-sm transition-all"
-                    >
-                      {isIngesting ? 'Scraping URL...' : 'Scrape & Ingest'}
-                    </button>
-                  </form>
+                    {showPresetsSelector && (
+                      <div className="bg-[#191919] border border-[#2d2d2d] rounded-xl p-3.5 space-y-3.5 animate-fadeIn">
+                        <span className="text-[10px] font-bold text-slate-400 block border-b border-[#2d2d2d] pb-1.5 uppercase tracking-wider">
+                          SUPPORTED APIS & CODING SDKS
+                        </span>
+                        
+                        <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                          {OPTSIGNS_API_PRESETS.map((preset, idx) => {
+                            const isChecked = !!checkedPresets[preset.url];
+                            return (
+                              <label 
+                                key={idx} 
+                                className="flex items-start gap-2.5 cursor-pointer text-xs select-none hover:bg-slate-900/60 p-2 rounded-lg transition-colors border border-transparent hover:border-[#2d2d2d]"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleTogglePreset(preset.url)}
+                                  className="mt-0.5 accent-blue-500 cursor-pointer"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-slate-200 font-semibold block text-[11px] leading-tight">{preset.title}</span>
+                                  <span className="text-[9px] text-slate-500 block truncate mt-0.5" title={preset.url}>
+                                    {preset.url}
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        
+                        <div className="flex gap-2 pt-2.5 border-t border-[#2d2d2d]">
+                          <button
+                            type="button"
+                            onClick={handleSelectAllPresets}
+                            className="flex-1 text-[10px] bg-[#2d2d2d] hover:bg-[#3d3d3d] text-slate-300 py-1.5 rounded-lg font-bold transition-all cursor-pointer border border-[#3d3d3d]"
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleIngestApiPresets}
+                            disabled={isIngesting || Object.values(checkedPresets).filter(Boolean).length === 0}
+                            className="flex-1 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400 text-white py-1.5 rounded-lg font-bold transition-all cursor-pointer shadow-sm border-0"
+                          >
+                            ⚡ Ingest Checked ({Object.values(checkedPresets).filter(Boolean).length})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {/* Tab 3: Manual Input */}
