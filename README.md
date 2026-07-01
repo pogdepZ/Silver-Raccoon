@@ -1,6 +1,6 @@
 # Silver Raccoon: KB Sync Engine & Support Bot (Gemini Edition)
 
-A lightweight, robust, self-cleaning synchronization engine that pulls support articles from Zendesk, converts them to clean Markdown, and manages a Google Gemini File Search Store.
+A lightweight, robust, self-cleaning synchronization engine that pulls support articles from Zendesk, converts them to clean Markdown, manages a Google Gemini File Search Store, and provides a modern React + FastAPI Web Console.
 
 ---
 
@@ -20,7 +20,13 @@ A lightweight, robust, self-cleaning synchronization engine that pulls support a
  └───────────────┘
          │ (Gemini File Search Stores API)
          ▼
-[Google Gemini Model] (gemini-2.5-flash with grounding tool)
+[Google Gemini Model] ◄──────────────────────────────┐
+         ▲                                           │
+         │ (Grounding queries)                       │ (API /chat)
+         ▼                                           │
+ ┌───────────────────────────────────────────────────┴┐
+ │   web_app.py (FastAPI Backend + React Frontend)    │
+ └────────────────────────────────────────────────────┘
 ```
 
 ### 1. Ingestion & Markdown Conversion
@@ -63,12 +69,31 @@ To avoid unnecessary uploads, rate limits, and API cost:
    cp .env.sample .env
    ```
 
-### Running Locally
-To run the synchronizer once:
+---
+
+## Running the Application
+
+### 1. Run Synchronization (Scraper -> Gemini Store)
+To run the sync job once:
 ```bash
 python main.py
 ```
 This pulls support articles, saves them locally to `data/articles/`, and synchronizes them with your Gemini File Search Store. A detailed execution summary is logged to `logs/last_run.json`.
+
+### 2. Run the React + FastAPI Web Console
+To start the web server (interactive chatbot + synchronization stats dashboard):
+```bash
+python main.py --serve
+```
+Now, open your browser and navigate to **`http://localhost:8000`**.
+- **Left Panel**: Displays live synchronization statistics (Total scraped, added, skipped, last run timestamp) and a checklist of all 30 active documents in the vector store.
+- **Right Panel**: A dark-mode, glassmorphism chat interface allowing you to chat with OptiBot. It renders citations as clickable card elements and lists the exact grounding sources used for each reply.
+
+### 3. CLI Assistant Verification
+You can still query the Assistant programmatically from the terminal using:
+```bash
+python ask_gemini.py "How do I add a YouTube video?"
+```
 
 ---
 
@@ -79,22 +104,22 @@ This pulls support articles, saves them locally to `data/articles/`, and synchro
 docker build -t silver-raccoon-sync .
 ```
 
-### Run the Container
-Run the sync job once:
+### Run Sync Job in Docker
 ```bash
 docker run -e GEMINI_API_KEY="your-gemini-api-key" silver-raccoon-sync
 ```
 
-To persist state across container runs, mount the `gemini_state.json` file:
+### Run Web Console in Docker
+To run the React + FastAPI console in Docker, expose port 8000:
 ```bash
-docker run -e GEMINI_API_KEY="your-gemini-api-key" -v "$(pwd)/gemini_state.json:/app/gemini_state.json" silver-raccoon-sync
+docker run -p 8000:8000 -e GEMINI_API_KEY="your-gemini-api-key" silver-raccoon-sync python main.py --serve
 ```
 
 ---
 
 ## Production Deployment (Daily Job)
 
-We deploy this scheduled worker using **GitHub Actions**.
+We deploy the scheduled worker using **GitHub Actions**.
 
 ### State Persistence
 Because GitHub Actions runners are stateless, we use `actions/cache` to preserve `gemini_state.json` and the scraped markdown directory across runs, allowing true delta logic to function.
