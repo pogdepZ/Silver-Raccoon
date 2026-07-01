@@ -188,7 +188,8 @@ const formatMarkdown = (text) => {
   let formatted = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
   // Convert code blocks (```code```)
   formatted = formatted.replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-900 text-slate-200 p-3 rounded-lg border border-[#3d3d3d] text-xs font-mono overflow-x-auto my-2 leading-relaxed">$1</pre>');
@@ -200,10 +201,10 @@ const formatMarkdown = (text) => {
   formatted = formatted.replace(/`(.*?)`/g, '<code class="bg-[#191919] text-pink-400 px-1 py-0.5 rounded text-xs font-mono font-medium">$1</code>');
   
   // Convert links [text](url)
-  formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-400 hover:underline inline-flex items-center">$1</a>');
+  formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline inline-flex items-center break-words">$1</a>');
   
   // Convert raw URLs (ignore if inside href="..." or markdown link parentheses)
-  formatted = formatted.replace(/(?<!href=")(?<!\()(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-400 hover:underline">$1</a>');
+  formatted = formatted.replace(/(?<!href=&quot;)(?<!\()(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline break-words">$1</a>');
 
   // Convert bullet points
   formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1 text-slate-300">$1</li>');
@@ -215,6 +216,55 @@ const formatMarkdown = (text) => {
     }
     return `<p class="mb-2 leading-relaxed">${p}</p>`;
   }).join('');
+};
+
+const calculateExpression = (expression) => {
+  const tokens = expression.match(/\d+(?:\.\d+)?|[()+\-*/]/g);
+  if (!tokens || tokens.join('') !== expression.replace(/\s/g, '')) {
+    throw new Error('Invalid expression');
+  }
+
+  let index = 0;
+
+  const parseFactor = () => {
+    const token = tokens[index++];
+    if (token === '(') {
+      const value = parseExpression();
+      if (tokens[index++] !== ')') throw new Error('Mismatched parentheses');
+      return value;
+    }
+    if (token === '-') return -parseFactor();
+
+    const value = Number(token);
+    if (!Number.isFinite(value)) throw new Error('Invalid number');
+    return value;
+  };
+
+  const parseTerm = () => {
+    let value = parseFactor();
+    while (tokens[index] === '*' || tokens[index] === '/') {
+      const operator = tokens[index++];
+      const next = parseFactor();
+      value = operator === '*' ? value * next : value / next;
+    }
+    return value;
+  };
+
+  function parseExpression() {
+    let value = parseTerm();
+    while (tokens[index] === '+' || tokens[index] === '-') {
+      const operator = tokens[index++];
+      const next = parseTerm();
+      value = operator === '+' ? value + next : value - next;
+    }
+    return value;
+  }
+
+  const result = parseExpression();
+  if (index !== tokens.length || !Number.isFinite(result)) {
+    throw new Error('Invalid expression');
+  }
+  return result;
 };
 
 function App() {
@@ -493,6 +543,7 @@ function App() {
         isStreaming: true
       }]);
       speakText(data.answer);
+      setIsLoading(false);
     } catch (error) {
       console.warn("Backend error or offline. Generating mock response.");
       setTimeout(() => {
@@ -510,9 +561,8 @@ function App() {
           answer = "I am **OptiBot**, the customer support assistant for OptiSigns.com! I can help you configure screens, apps, play videos, or troubleshoot player issues.";
         } else if (/[0-9]/.test(q) && (q.includes("+") || q.includes("-") || q.includes("*") || q.includes("/") || q.includes("="))) {
           try {
-            // Clean expression for safe evaluation (only allow digits, space, and simple math symbols)
             const expr = q.replace(/[^0-9+\-*/().\s]/g, "");
-            const result = Function(`"use strict"; return (${expr})`)();
+            const result = calculateExpression(expr);
             answer = `The result of ${expr.trim()} is **${result}**.`;
           } catch (e) {
             answer = "I can calculate basic expressions for you. Please write it clearly (e.g. 1 + 2).";
@@ -529,8 +579,6 @@ function App() {
         speakText(answer);
         setIsLoading(false);
       }, 1000);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -774,11 +822,11 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col w-screen h-screen overflow-hidden bg-[#202123] text-slate-200 antialiased relative">
+    <div className="flex min-h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-[#202123] text-slate-200 antialiased relative">
       
       {/* Toast Notification */}
       {toast.show && (
-        <div className={`absolute top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-2xl transition-all duration-300 border animate-slide-in ${
+        <div className={`absolute top-4 right-4 left-4 sm:left-auto z-50 flex max-w-[calc(100vw-2rem)] items-center gap-2 px-4 py-3 rounded-lg shadow-2xl transition-all duration-300 border animate-slide-in ${
           toast.type === 'success' 
             ? 'bg-[#1b2a1c] border-green-800 text-green-400' 
             : 'bg-[#2d1b1b] border-red-800 text-red-400'
@@ -806,7 +854,7 @@ function App() {
       </header>
 
       {/* Main Container Wrapper */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex min-h-0 overflow-hidden relative">
         
         {/* Mobile Sidebar backdrop */}
         {mobileSidebarOpen && (
@@ -946,16 +994,16 @@ function App() {
 
       {/* 2. CHAT VIEW (Only shown when activeView === 'chat') */}
       {activeView === 'chat' && (
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
+        <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#202123]">
           {/* Top Header (fixed) */}
-          <header className="p-4 border-b border-[#2d2d2d] flex items-center justify-between bg-[#202123]/80 backdrop-blur-sm shrink-0">
-            <div className="flex items-center gap-2">
+          <header className="p-4 border-b border-[#2d2d2d] flex items-center justify-between gap-3 bg-[#202123]/80 backdrop-blur-sm shrink-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h2 className="font-semibold text-white text-sm sm:text-base">OptiBot AI Assistant</h2>
               <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-950/30 text-green-400 border border-green-800/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse"></span> Grounded
               </span>
             </div>
-            <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
+            <div className="hidden sm:block shrink-0 text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
               gemini-3.1-flash-lite
             </div>
           </header>
@@ -964,9 +1012,9 @@ function App() {
           <div 
             ref={chatContainerRef} 
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto w-full"
+            className="flex-1 min-h-0 overflow-y-auto w-full"
           >
-            <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col min-h-full space-y-6">
+            <div className="max-w-3xl mx-auto px-3 sm:px-4 py-6 sm:py-8 flex flex-col min-h-full space-y-5 sm:space-y-6">
               
               {/* Spacer with mt-auto pushing messages to the bottom */}
               <div className="mt-auto" />
@@ -977,7 +1025,7 @@ function App() {
                 return (
                   <div 
                     key={msg.id} 
-                    className={`flex gap-4 max-w-full ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+                    className={`flex gap-3 sm:gap-4 max-w-full min-w-0 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
                   >
                     {/* Avatar Icon */}
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm border ${
@@ -989,9 +1037,9 @@ function App() {
                     </div>
 
                     {/* Message Bubble Container */}
-                    <div className="flex flex-col gap-2 max-w-[80%]">
+                    <div className="flex min-w-0 flex-col gap-2 max-w-[calc(100%-2.75rem)] sm:max-w-[80%]">
                       {/* Message Bubble */}
-                      <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
+                      <div className={`overflow-hidden break-words p-3 sm:p-4 rounded-2xl text-sm leading-relaxed ${
                         isUser 
                           ? 'bg-[#2563eb] text-white rounded-tr-none shadow-sm' 
                           : 'bg-[#2d2d2d] text-slate-200 rounded-tl-none border border-[#3d3d3d]'
@@ -1032,7 +1080,7 @@ function App() {
                                       }
                                     }
                                   }}
-                                  className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-[#3d3d3d] text-slate-400 hover:text-white hover:border-slate-300 hover:bg-[#2d2d2d] max-w-xs truncate cursor-pointer transition-all flex items-center gap-1 font-medium select-none"
+                                  className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-[#3d3d3d] text-slate-400 hover:text-white hover:border-slate-300 hover:bg-[#2d2d2d] max-w-full sm:max-w-xs truncate cursor-pointer transition-all flex items-center gap-1 font-medium select-none"
                                   title={matchingArt ? `Click to read: ${matchingArt.title}` : src}
                                 >
                                   <BookOpenIcon className="w-2.5 h-2.5 text-blue-400 shrink-0" />
@@ -1075,23 +1123,23 @@ function App() {
           )}
 
           {/* Input Box (Fixed at bottom, shrink-0) */}
-          <div className="p-5 border-t border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-md shrink-0 w-full">
+          <div className="p-3 sm:p-5 border-t border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-md shrink-0 w-full">
             <div className="max-w-3xl mx-auto">
-              <form onSubmit={handleSendMessage} className="flex gap-2">
+              <form onSubmit={handleSendMessage} className="flex flex-wrap gap-2">
                 <input
                   type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   disabled={isLoading}
                   placeholder="Ask OptiBot about OptiSigns..."
-                  className="flex-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="min-w-0 flex-[1_1_12rem] bg-[#2d2d2d] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 
                 <button
                   type="button"
                   onClick={startSpeechRecognition}
                   disabled={isLoading}
-                  className={`px-3.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
+                  className={`min-h-11 px-3.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
                     isListening
                       ? 'bg-red-900/40 text-red-400 border-red-800/30 animate-pulse'
                       : 'bg-[#2d2d2d] text-slate-400 hover:text-white border-[#3d3d3d] hover:border-slate-500'
@@ -1110,7 +1158,7 @@ function App() {
                         setIsSpeaking(false);
                       }
                     }}
-                    className="px-3.5 rounded-xl border bg-yellow-950/20 text-yellow-400 border-yellow-900/30 hover:border-yellow-500/30 flex items-center justify-center cursor-pointer transition-all active:scale-95 animate-bounce"
+                    className="min-h-11 px-3.5 rounded-xl border bg-yellow-950/20 text-yellow-400 border-yellow-900/30 hover:border-yellow-500/30 flex items-center justify-center cursor-pointer transition-all active:scale-95 animate-bounce"
                     title="Mute / Stop reading aloud"
                   >
                     <VolumeXIcon className="w-4 h-4" />
@@ -1120,7 +1168,7 @@ function App() {
                 <button
                   type="submit"
                   disabled={isLoading || !inputValue.trim()}
-                  className="bg-[#2563eb] hover:bg-[#1d4ed8] active:bg-[#1e3a8a] text-white px-4 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="min-h-11 bg-[#2563eb] hover:bg-[#1d4ed8] active:bg-[#1e3a8a] text-white px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <span>Send</span>
                   <SendIcon className="w-3.5 h-3.5 text-white" />
@@ -1136,7 +1184,7 @@ function App() {
 
       {/* 3. KNOWLEDGE BASE / ADD KNOWLEDGE VIEW (Only shown when activeView === 'knowledge') */}
       {activeView === 'knowledge' && (
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
+        <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#202123]">
           
           {/* Header */}
           <header className="p-4 border-b border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-sm shrink-0 flex flex-col justify-center">
@@ -1145,18 +1193,18 @@ function App() {
           </header>
 
           {/* Main Dashboard Layout (Split-screen: left for upload controls, right for recent ledger) */}
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden w-full p-4 lg:p-6 gap-6">
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden w-full p-3 sm:p-4 lg:p-6 gap-4 lg:gap-6">
             
             {/* Left Main Card (Input controls) */}
-            <div className="flex-1 flex flex-col overflow-y-auto space-y-6">
+            <div className="flex-1 min-w-0 flex flex-col overflow-visible lg:overflow-y-auto space-y-4 lg:space-y-6">
               
               {/* Tab Selector Card */}
               <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] shadow-md p-4">
-                <div className="flex border-b border-[#3d3d3d] mb-4">
+                <div className="flex flex-col sm:flex-row border-b border-[#3d3d3d] mb-4">
                   <button 
                     onClick={() => { if (!isIngesting) setActiveKbTab('file'); }}
                     disabled={isIngesting}
-                    className={`flex-1 pb-3 text-sm font-medium transition-all ${
+                    className={`flex-1 px-2 py-2 sm:pb-3 text-left sm:text-center text-sm font-medium transition-all ${
                       activeKbTab === 'file' 
                         ? 'border-b-2 border-blue-500 text-white' 
                         : 'text-slate-400 hover:text-slate-200'
@@ -1167,7 +1215,7 @@ function App() {
                   <button 
                     onClick={() => { if (!isIngesting) setActiveKbTab('url'); }}
                     disabled={isIngesting}
-                    className={`flex-1 pb-3 text-sm font-medium transition-all ${
+                    className={`flex-1 px-2 py-2 sm:pb-3 text-left sm:text-center text-sm font-medium transition-all ${
                       activeKbTab === 'url' 
                         ? 'border-b-2 border-blue-500 text-white' 
                         : 'text-slate-400 hover:text-slate-200'
@@ -1178,7 +1226,7 @@ function App() {
                   <button 
                     onClick={() => { if (!isIngesting) setActiveKbTab('manual'); }}
                     disabled={isIngesting}
-                    className={`flex-1 pb-3 text-sm font-medium transition-all ${
+                    className={`flex-1 px-2 py-2 sm:pb-3 text-left sm:text-center text-sm font-medium transition-all ${
                       activeKbTab === 'manual' 
                         ? 'border-b-2 border-blue-500 text-white' 
                         : 'text-slate-400 hover:text-slate-200'
@@ -1194,7 +1242,7 @@ function App() {
                     <div 
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={handleFileDrop}
-                      className="border-2 border-dashed border-[#3d3d3d] hover:border-blue-500 transition-all rounded-lg p-8 flex flex-col items-center justify-center bg-[#191919]/50 cursor-pointer"
+                      className="border-2 border-dashed border-[#3d3d3d] hover:border-blue-500 transition-all rounded-lg p-5 sm:p-8 flex flex-col items-center justify-center text-center bg-[#191919]/50 cursor-pointer"
                     >
                       <UploadCloudIcon className="w-10 h-10 text-slate-500 mb-3" />
                       <span className="text-sm font-semibold text-white">Drag & drop files here</span>
@@ -1219,8 +1267,8 @@ function App() {
                     </div>
 
                     {selectedFile && (
-                      <div className="flex items-center justify-between bg-[#191919] p-3 rounded-lg border border-[#3d3d3d]">
-                        <div className="flex items-center gap-2 truncate">
+                      <div className="flex items-center justify-between gap-3 bg-[#191919] p-3 rounded-lg border border-[#3d3d3d]">
+                        <div className="flex min-w-0 items-center gap-2 truncate">
                           <FileTextIcon className="w-4 h-4 text-blue-500 shrink-0" />
                           <span className="text-xs font-medium text-slate-200 truncate">{selectedFile.name}</span>
                         </div>
@@ -1318,8 +1366,8 @@ function App() {
                   <div className="space-y-3">
                     {pipelineSteps.map((step) => {
                       return (
-                        <div key={step.id} className="flex items-center justify-between text-xs p-1.5 rounded bg-[#191919]/40">
-                          <div className="flex items-center gap-2.5">
+                        <div key={step.id} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between text-xs p-1.5 rounded bg-[#191919]/40">
+                          <div className="flex min-w-0 items-center gap-2.5">
                             {/* Loader or Bullet */}
                             {step.status === 'pending' && <div className="w-3.5 h-3.5 rounded-full border border-[#3d3d3d] bg-transparent" />}
                             {step.status === 'processing' && <div className="w-3.5 h-3.5 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />}
@@ -1329,7 +1377,7 @@ function App() {
                               step.status === 'processing' ? 'text-white font-semibold' :
                               step.status === 'done' ? 'text-slate-400' : 'text-slate-500'
                             }>
-                              {step.name}
+                              <span className="break-words">{step.name}</span>
                             </span>
                           </div>
                           <div>
@@ -1347,7 +1395,7 @@ function App() {
             </div>
 
             {/* Right Panel Card (Recent Ledger) */}
-            <div className="w-full lg:w-80 h-64 lg:h-auto bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] shadow-md flex flex-col overflow-hidden shrink-0">
+            <div className="w-full lg:w-80 min-h-64 lg:h-auto bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] shadow-md flex flex-col overflow-hidden shrink-0">
               <div className="p-4 border-b border-[#3d3d3d] shrink-0">
                 <h3 className="font-semibold text-white text-sm">Recent Ingestions</h3>
                 <p className="text-[11px] text-slate-500">Live ledger of synced document chunks</p>
@@ -1400,7 +1448,7 @@ function App() {
 
       {/* 4. RAG PLAYGROUND / EXPLORER VIEW (Only shown when activeView === 'explorer') */}
       {activeView === 'explorer' && (
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
+        <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#202123]">
           {/* Header */}
           <header className="p-4 border-b border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-sm shrink-0 flex flex-col justify-center">
             <h2 className="font-semibold text-white text-base sm:text-lg">RAG Playground</h2>
@@ -1408,11 +1456,11 @@ function App() {
           </header>
 
           {/* Explorer Layout */}
-          <div className="flex-1 flex flex-col overflow-y-auto w-full p-6 space-y-6">
+          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto w-full p-3 sm:p-6 space-y-4 sm:space-y-6">
             
             {/* Input search box card */}
             <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-5 shadow-md shrink-0">
-              <form onSubmit={handleExplorerSubmit} className="flex gap-3">
+              <form onSubmit={handleExplorerSubmit} className="flex flex-col sm:flex-row gap-3">
                 <input 
                   type="text" 
                   value={explorerQuery}
@@ -1420,12 +1468,12 @@ function App() {
                   disabled={explorerLoading}
                   placeholder="Enter a test support query (e.g. 'How do I add a YouTube video?')"
                   required
-                  className="flex-1 bg-[#191919] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  className="min-w-0 flex-1 bg-[#191919] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
                 <button
                   type="submit"
                   disabled={explorerLoading || !explorerQuery.trim()}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white font-semibold text-sm px-6 rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                  className="min-h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white font-semibold text-sm px-6 rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {explorerLoading ? (
                     <>
@@ -1455,8 +1503,8 @@ function App() {
                 
                 {/* Left Column: Semantic Grounding Data */}
                 <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-5 shadow-md flex flex-col">
-                  <div className="border-b border-[#3d3d3d] pb-3 mb-4 shrink-0 flex items-center justify-between">
-                    <div>
+                  <div className="border-b border-[#3d3d3d] pb-3 mb-4 shrink-0 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
                       <h3 className="font-semibold text-white text-sm">Grounded Vector Search</h3>
                       <p className="text-[11px] text-slate-500">Matching chunks retrieved from Gemini Vector Store</p>
                     </div>
@@ -1472,14 +1520,14 @@ function App() {
                   <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                     {explorerResults.chunks && explorerResults.chunks.length > 0 ? (
                       explorerResults.chunks.map((chunk, cIdx) => (
-                        <div key={cIdx} className="bg-[#191919] p-4 rounded-xl border border-[#3d3d3d] space-y-3">
-                          <div className="flex items-center justify-between text-xs border-b border-[#2d2d2d] pb-2">
+                        <div key={cIdx} className="bg-[#191919] p-3 sm:p-4 rounded-xl border border-[#3d3d3d] space-y-3">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs border-b border-[#2d2d2d] pb-2">
                             <button
                               onClick={() => openArticleInDrawer(chunk.slug)}
-                              className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                              className="min-w-0 text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                             >
                               <BookOpenIcon className="w-3.5 h-3.5 text-blue-400" />
-                              <span>{chunk.title}</span>
+                              <span className="truncate">{chunk.title}</span>
                             </button>
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] text-slate-500 font-mono">Relevance Score</span>
@@ -1542,10 +1590,10 @@ function App() {
 
       {/* 5. SYSTEM DIAGNOSTICS LOGS VIEW (Only shown when activeView === 'logs') */}
       {activeView === 'logs' && (
-        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#090b10]">
+        <main className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#090b10]">
           {/* Header */}
-          <header className="p-4 border-b border-[#1b2330] bg-[#0c0f17] shrink-0 flex items-center justify-between">
-            <div>
+          <header className="p-4 border-b border-[#1b2330] bg-[#0c0f17] shrink-0 flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <h2 className="font-semibold text-white text-base sm:text-lg">System Logs</h2>
               <p className="text-xs text-slate-500">Live diagnostics and pipeline execution traces</p>
             </div>
@@ -1561,7 +1609,7 @@ function App() {
           </header>
 
           {/* Terminal Console */}
-          <div className="flex-1 p-6 overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 p-3 sm:p-6 overflow-hidden flex flex-col">
             <div className="flex-1 bg-black rounded-xl border border-[#1b2330] flex flex-col overflow-hidden shadow-2xl">
               
               {/* Terminal Window Header */}
@@ -1604,25 +1652,25 @@ function App() {
       />
 
       <div 
-        className={`fixed top-0 right-0 bottom-0 w-[550px] max-w-[90vw] bg-[#171c26] border-l border-[#2d2d2d] shadow-2xl z-50 transform transition-transform duration-300 ease-out flex flex-col ${
+        className={`fixed top-0 right-0 bottom-0 w-[550px] max-w-full sm:max-w-[90vw] bg-[#171c26] border-l border-[#2d2d2d] shadow-2xl z-50 transform transition-transform duration-300 ease-out flex flex-col ${
           drawerOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {/* Drawer Header */}
-        <div className="p-4 border-b border-[#2d2d2d] flex items-center justify-between shrink-0 bg-[#121620]">
-          <div className="flex items-center gap-2 text-white">
+        <div className="p-4 border-b border-[#2d2d2d] flex items-center justify-between gap-3 shrink-0 bg-[#121620]">
+          <div className="flex min-w-0 items-center gap-2 text-white">
             <BookOpenIcon className="w-5 h-5 text-blue-400" />
-            <h3 className="font-semibold text-sm truncate max-w-[320px]">
+            <h3 className="font-semibold text-sm truncate">
               {drawerLoading ? 'Loading Article...' : (drawerArticle ? drawerArticle.title : 'RAG Source Document')}
             </h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {drawerArticle && drawerArticle.source_url && drawerArticle.source_url !== '#' && (
               <a 
                 href={drawerArticle.source_url} 
                 target="_blank" 
                 rel="noreferrer"
-                className="text-xs text-blue-400 hover:underline flex items-center gap-1 bg-slate-900 border border-[#2d2d2d] px-2.5 py-1 rounded select-none"
+                className="hidden sm:flex text-xs text-blue-400 hover:underline items-center gap-1 bg-slate-900 border border-[#2d2d2d] px-2.5 py-1 rounded select-none"
               >
                 <LinkIcon className="w-3 h-3" />
                 <span>Original URL</span>
@@ -1638,7 +1686,7 @@ function App() {
         </div>
 
         {/* Drawer Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-slate-300 text-sm leading-relaxed select-text">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-slate-300 text-sm leading-relaxed select-text">
           {drawerLoading ? (
             <div className="flex flex-col items-center justify-center h-64 space-y-3">
               <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
