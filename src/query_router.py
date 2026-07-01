@@ -93,11 +93,32 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
     category = classify_question(client, message)
     
     if category == "PRODUCT_SUPPORT":
+        inactive_titles = []
+        try:
+            state_path = "gemini_state.json"
+            if os.path.exists(state_path):
+                with open(state_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                    for slug, meta in state.get("articles", {}).items():
+                        if not meta.get("active", True):
+                            inactive_titles.append(meta.get("title", slug))
+        except Exception:
+            pass
+
+        custom_prompt = PRODUCT_SUPPORT_SYSTEM_PROMPT
+        if inactive_titles:
+            custom_prompt += (
+                f"\n\nCRITICAL RULE: The following support articles are currently DEACTIVATED: "
+                f"{', '.join([f'\"{t}\"' for t in inactive_titles])}. "
+                f"You MUST NOT use any information from these documents to answer queries. "
+                f"If the query is related to them, reply that the document is currently deactivated."
+            )
+
         response = client.models.generate_content(
             model=model_name,
             contents=message,
             config=types.GenerateContentConfig(
-                system_instruction=PRODUCT_SUPPORT_SYSTEM_PROMPT,
+                system_instruction=custom_prompt,
                 tools=[
                     types.Tool(
                         file_search=types.FileSearch(

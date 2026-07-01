@@ -472,6 +472,30 @@ function App() {
     showToastNotification('Chat history cleared', 'success');
   };
 
+  const toggleArticleActive = async (slug) => {
+    try {
+      const res = await fetch(`/api/articles/${encodeURIComponent(slug)}/toggle-active`, {
+        method: 'POST'
+      });
+      if (!res.ok) {
+        throw new Error('Failed to toggle article state');
+      }
+      const data = await res.json();
+      
+      setArticles(prev => prev.map(art => {
+        if (art.slug === slug) {
+          return { ...art, active: data.active };
+        }
+        return art;
+      }));
+      
+      showToastNotification(`Article status updated to: ${data.active ? 'ACTIVE' : 'INACTIVE'}`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToastNotification('Failed to toggle article status', 'error');
+    }
+  };
+
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTo({
@@ -936,12 +960,38 @@ function App() {
                 <div
                   key={idx}
                   onClick={() => openArticleInDrawer(art.slug)}
-                  className="group flex items-center justify-between px-2 py-1.5 rounded-md text-xs text-slate-300 hover:bg-[#2d2d2d]/60 hover:text-white transition-colors cursor-pointer select-none"
-                  title="Click to read cached article inline"
+                  className={`group flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer select-none ${
+                    art.active === false 
+                      ? 'bg-[#1e1e1e]/20 text-slate-500 hover:bg-[#2d2d2d]/30' 
+                      : 'text-slate-300 hover:bg-[#2d2d2d]/60 hover:text-white'
+                  }`}
+                  title={art.active === false ? "RAG Deactivated. Click to read cached article inline" : "RAG Active. Click to read cached article inline"}
                 >
-                  <div className="flex items-center gap-2 truncate pr-1.5">
-                    <FileTextIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span className="truncate">{art.title}</span>
+                  <div className="flex items-center gap-2 truncate pr-1.5 flex-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleArticleActive(art.slug);
+                      }}
+                      className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
+                        art.active !== false
+                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-700'
+                          : 'bg-transparent border-[#3d3d3d] hover:border-slate-500'
+                      }`}
+                      title={art.active !== false ? "Article is ACTIVE. Click to deactivate in RAG." : "Article is INACTIVE. Click to activate in RAG."}
+                    >
+                      {art.active !== false && (
+                        <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    
+                    <FileTextIcon className={`w-3.5 h-3.5 shrink-0 ${art.active === false ? 'text-slate-600' : 'text-blue-400'}`} />
+                    <span className={`truncate ${art.active === false ? 'line-through decoration-slate-600/60 text-slate-600' : ''}`}>
+                      {art.title}
+                    </span>
                   </div>
                   {art.source_url && art.source_url !== '#' && (
                     <a
@@ -1563,37 +1613,55 @@ function App() {
 
                   <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                     {explorerResults.chunks && explorerResults.chunks.length > 0 ? (
-                      explorerResults.chunks.map((chunk, cIdx) => (
-                        <div key={cIdx} className="bg-[#191919] p-4 rounded-xl border border-[#3d3d3d] space-y-3">
-                          <div className="flex items-center justify-between text-xs border-b border-[#2d2d2d] pb-2">
-                            <button
-                              onClick={() => openArticleInDrawer(chunk.slug)}
-                              className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
-                            >
-                              <BookOpenIcon className="w-3.5 h-3.5 text-blue-400" />
-                              <span>{chunk.title}</span>
-                            </button>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-slate-500 font-mono">Relevance Score</span>
-                              <span className="text-[11px] text-green-400 font-bold font-mono">
-                                {(chunk.similarity_score * 100).toFixed(1)}%
-                              </span>
+                      explorerResults.chunks.map((chunk, cIdx) => {
+                        const targetArt = articles.find(a => a.slug === chunk.slug);
+                        const isInactive = targetArt && targetArt.active === false;
+                        
+                        return (
+                          <div 
+                            key={cIdx} 
+                            className={`bg-[#191919] p-4 rounded-xl border space-y-3 transition-opacity ${
+                              isInactive ? 'opacity-50 border-red-950 bg-red-950/5' : 'border-[#3d3d3d]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-xs border-b border-[#2d2d2d] pb-2">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openArticleInDrawer(chunk.slug)}
+                                  className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                                >
+                                  <BookOpenIcon className="w-3.5 h-3.5 text-blue-400" />
+                                  <span>{chunk.title}</span>
+                                </button>
+                                {isInactive && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-bold uppercase select-none border border-red-900/30">
+                                    Deactivated
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-500 font-mono">Relevance Score</span>
+                                <span className="text-[11px] text-green-400 font-bold font-mono">
+                                  {(chunk.similarity_score * 100).toFixed(1)}%
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Similarity indicator bar */}
+                            <div className="w-full bg-[#2d2d2d] h-1.5 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-green-500 h-full transition-all duration-500" 
+                                style={{ width: `${chunk.similarity_score * 100}%` }}
+                              />
+                            </div>
+
+                            <div className="text-xs text-slate-400 leading-relaxed font-mono whitespace-pre-wrap select-text max-h-48 overflow-y-auto bg-black/20 p-2.5 rounded border border-[#2d2d2d]">
+                              {chunk.text}
                             </div>
                           </div>
-                          
-                          {/* Similarity indicator bar */}
-                          <div className="w-full bg-[#2d2d2d] h-1.5 rounded-full overflow-hidden">
-                            <div 
-                              className="bg-green-500 h-full transition-all duration-500" 
-                              style={{ width: `${chunk.similarity_score * 100}%` }}
-                            />
-                          </div>
-
-                          <div className="text-xs text-slate-400 leading-relaxed font-mono whitespace-pre-wrap select-text max-h-48 overflow-y-auto bg-black/20 p-2.5 rounded border border-[#2d2d2d]">
-                            {chunk.text}
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="flex-1 flex flex-col items-center justify-center py-12 text-center text-slate-500 text-xs">
                         <CheckCircleIcon className="w-8 h-8 text-slate-600 mb-2" />

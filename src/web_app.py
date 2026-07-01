@@ -99,7 +99,8 @@ def get_status():
                         "article_id": meta.get("article_id"),
                         "source_url": meta.get("source_url", ""),
                         "updated_at": meta.get("updated_at", ""),
-                        "synced_at": meta.get("synced_at", meta.get("updated_at", ""))
+                        "synced_at": meta.get("synced_at", meta.get("updated_at", "")),
+                        "active": meta.get("active", True)
                     })
         except Exception:
             pass
@@ -154,6 +155,36 @@ def get_article_content(slug: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read article content: {str(e)}")
+
+@app.post("/api/articles/{slug:path}/toggle-active")
+def toggle_article_active(slug: str):
+    state_path = "gemini_state.json"
+    if not os.path.exists(state_path):
+        raise HTTPException(status_code=400, detail="Sync state file not found.")
+        
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            
+        articles = state.get("articles", {})
+        if slug not in articles:
+            raise HTTPException(status_code=404, detail="Article not found in state.")
+            
+        # Flip the active state (default to True)
+        current_active = articles[slug].get("active", True)
+        new_active = not current_active
+        articles[slug]["active"] = new_active
+        
+        state["articles"] = articles
+        
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+            
+        return {"status": "success", "slug": slug, "active": new_active}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle article state: {str(e)}")
 
 def calculate_similarity(query: str, text: str) -> float:
     q_words = set(re.findall(r'\w+', query.lower()))
