@@ -351,3 +351,45 @@ class TestIngestionEndpoints(unittest.TestCase):
         with open(self.state_file, "r") as f:
             state = json.load(f)
             self.assertNotIn(dummy_slug, state["articles"])
+
+    @patch("src.web_app.classify_question")
+    @patch("src.web_app.genai.Client")
+    def test_rag_explore_deactivated_veto(self, mock_client_class, mock_classify):
+        mock_classify.return_value = "PRODUCT_SUPPORT"
+        
+        dummy_slug = "youtube-guide"
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+        state["articles"][dummy_slug] = {
+            "title": "YouTube Guide",
+            "active": False
+        }
+        with open(self.state_file, "w") as f:
+            json.dump(state, f)
+            
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This is a detailed guide on how to add YouTube..."
+        
+        mock_chunk = MagicMock()
+        mock_chunk.retrieved_context.text = "YouTube support steps content..."
+        mock_chunk.retrieved_context.title = "youtube-guide.md"
+        mock_chunk.retrieved_context.uri = ""
+        mock_chunk.retrieved_context.custom_metadata = [
+            MagicMock(key="slug", string_value="youtube-guide")
+        ]
+        
+        mock_response.candidates = [
+            MagicMock(grounding_metadata=MagicMock(grounding_chunks=[mock_chunk]))
+        ]
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
+        
+        payload = {"query": "How do I configure YouTube?"}
+        response = self.client.post("/api/rag/explore", json=payload)
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["classification"], "PRODUCT_SUPPORT")
+        self.assertEqual(data["answer"], "The requested support document is currently deactivated in the knowledge base.")
+        self.assertEqual(len(data["chunks"]), 0)

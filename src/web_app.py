@@ -331,11 +331,21 @@ def rag_explore_endpoint(request: ExploreRequest):
     if not vector_store_name:
         raise HTTPException(status_code=400, detail="Vector Store not initialized")
 
+    inactive_slugs = []
+    try:
+        articles = state.get("articles", {})
+        for slug, meta in articles.items():
+            if not meta.get("active", True):
+                inactive_slugs.append(slug)
+    except Exception:
+        pass
+
     client = genai.Client()
     category = classify_question(client, request.query)
     
     chunks = []
     answer = "[No grounding chunks retrieved]"
+    is_deactivated_used = False
     
     if category == "PRODUCT_SUPPORT":
         response = client.models.generate_content(
@@ -361,6 +371,7 @@ def rag_explore_endpoint(request: ExploreRequest):
                     if chunk.retrieved_context:
                         text_content = chunk.retrieved_context.text or ""
                         title = chunk.retrieved_context.title or "Vector Store Chunk"
+                        uri = chunk.retrieved_context.uri or ""
                         
                         score = calculate_similarity(request.query, text_content)
                         
@@ -374,6 +385,12 @@ def rag_explore_endpoint(request: ExploreRequest):
                         if not slug:
                             slug = title.replace(".md", "").replace(".txt", "")
                             
+                        # Match slug, title, or uri against inactive list
+                        for s in inactive_slugs:
+                            if s == slug or s in title or s in uri:
+                                is_deactivated_used = True
+                                break
+                                
                         chunks.append({
                             "chunk_index": idx,
                             "title": title,
@@ -381,6 +398,10 @@ def rag_explore_endpoint(request: ExploreRequest):
                             "text": text_content[:500] + "..." if len(text_content) > 500 else text_content,
                             "similarity_score": round(score, 4)
                         })
+                        
+        if is_deactivated_used:
+            answer = "The requested support document is currently deactivated in the knowledge base."
+            chunks = []
     else:
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite",

@@ -94,6 +94,7 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
     
     if category == "PRODUCT_SUPPORT":
         inactive_titles = []
+        inactive_slugs = []
         try:
             state_path = "gemini_state.json"
             if os.path.exists(state_path):
@@ -102,14 +103,19 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
                     for slug, meta in state.get("articles", {}).items():
                         if not meta.get("active", True):
                             inactive_titles.append(meta.get("title", slug))
+                            inactive_slugs.append(slug)
         except Exception:
             pass
 
         custom_prompt = PRODUCT_SUPPORT_SYSTEM_PROMPT
         if inactive_titles:
+            exclusions = []
+            for t, s in zip(inactive_titles, inactive_slugs):
+                exclusions.append(f'- Title: "{t}" (Slug: "{s}", Filename: "{s}.md")')
+            
             custom_prompt += (
-                f"\n\nCRITICAL RULE: The following support articles are currently DEACTIVATED: "
-                f"{', '.join([f'\"{t}\"' for t in inactive_titles])}. "
+                f"\n\nCRITICAL RULE: The following support articles are currently DEACTIVATED: \n"
+                f"{chr(10).join(exclusions)}\n"
                 f"You MUST NOT use any information from these documents to answer queries. "
                 f"If the query is related to them, reply that the document is currently deactivated."
             )
@@ -131,19 +137,39 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
         )
         sources = []
         has_grounding = False
+        is_deactivated_used = False
+        
         if response.candidates and response.candidates[0].grounding_metadata:
             metadata = response.candidates[0].grounding_metadata
             if metadata.grounding_chunks:
                 has_grounding = True
                 for chunk in metadata.grounding_chunks:
                     title = "Vector Store Chunk"
+                    uri = ""
                     if chunk.retrieved_context:
                         title = chunk.retrieved_context.title or chunk.retrieved_context.uri or "Vector Store Chunk"
+                        uri = chunk.retrieved_context.uri or ""
                     elif chunk.web:
                         title = chunk.web.title or chunk.web.uri
+                        uri = chunk.web.uri or ""
+                    
+                    # Match title or URI against inactive slugs
+                    for slug in inactive_slugs:
+                        if slug in title or slug in uri:
+                            is_deactivated_used = True
+                            break
+                    
                     if title not in sources:
                         sources.append(title)
         
+        # Veto if RAG query used deactivated resources
+        if is_deactivated_used:
+            return {
+                "answer": "The requested support document is currently deactivated in the knowledge base.",
+                "sources": [],
+                "classification": category
+            }
+            
         # If RAG found grounded documents, return the response
         if has_grounding:
             return {
