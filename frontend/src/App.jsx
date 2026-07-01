@@ -263,6 +263,9 @@ function App() {
   const [ttsRate, setTtsRate] = useState(1.0); // 0.5 to 2.0
   const [ttsPitch, setTtsPitch] = useState(1.0); // 0.5 to 1.5
   const [showTtsSettings, setShowTtsSettings] = useState(false);
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [selectedVoiceName, setSelectedVoiceName] = useState('auto');
+  const [autoReadEnabled, setAutoReadEnabled] = useState(true);
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -638,6 +641,17 @@ function App() {
   };
 
   useEffect(() => {
+    if (!window.speechSynthesis) return;
+    const updateVoices = () => {
+      setAvailableVoices(window.speechSynthesis.getVoices());
+    };
+    updateVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+  }, []);
+
+  useEffect(() => {
     if (activeView === 'chat' && chatContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
@@ -693,7 +707,9 @@ function App() {
         sources: data.sources || [],
         isStreaming: true
       }]);
-      speakText(data.answer);
+      if (autoReadEnabled) {
+        speakText(data.answer);
+      }
     } catch (error) {
       console.warn("Backend error or offline. Generating mock response.");
       setTimeout(() => {
@@ -727,7 +743,9 @@ function App() {
           sources: sources,
           isStreaming: true
         }]);
-        speakText(answer);
+        if (autoReadEnabled) {
+          speakText(answer);
+        }
         setIsLoading(false);
       }, 1000);
     } finally {
@@ -794,36 +812,42 @@ function App() {
     utterance.rate = ttsRate;
     utterance.pitch = ttsPitch;
     
-    // Auto detect or select speaking language
-    let isVietnamese = false;
-    if (ttsLanguage === 'auto') {
-      isVietnamese = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i.test(cleanText);
-    } else if (ttsLanguage === 'vi-VN') {
-      isVietnamese = true;
-    }
-    
-    if (isVietnamese) {
-      utterance.lang = 'vi-VN';
-    } else {
-      utterance.lang = 'en-US';
-    }
-    
     // Find browser matching speech synthesizers
     if (window.speechSynthesis.getVoices) {
       const voices = window.speechSynthesis.getVoices();
       let selectedVoice = null;
       
-      if (isVietnamese) {
-        selectedVoice = voices.find(v => v.lang.startsWith('vi') || v.lang.replace('_', '-').startsWith('vi'));
-      } else {
-        selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural')));
-        if (!selectedVoice) {
-          selectedVoice = voices.find(v => v.lang.startsWith('en'));
+      if (selectedVoiceName && selectedVoiceName !== 'auto') {
+        selectedVoice = voices.find(v => v.name === selectedVoiceName);
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          utterance.lang = selectedVoice.lang;
         }
       }
       
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
+      if (!selectedVoice) {
+        // Auto detect or select speaking language
+        let isVietnamese = false;
+        if (ttsLanguage === 'auto') {
+          isVietnamese = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/i.test(cleanText);
+        } else if (ttsLanguage === 'vi-VN') {
+          isVietnamese = true;
+        }
+        
+        if (isVietnamese) {
+          utterance.lang = 'vi-VN';
+          selectedVoice = voices.find(v => v.lang.startsWith('vi') || v.lang.replace('_', '-').startsWith('vi'));
+        } else {
+          utterance.lang = 'en-US';
+          selectedVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural')));
+          if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang.startsWith('en'));
+          }
+        }
+        
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+        }
       }
     }
     
@@ -1228,17 +1252,39 @@ function App() {
                         </button>
                       </div>
                       
-                      {/* Language selection */}
-                      <div className="space-y-1.5">
-                        <label className="text-slate-400 font-semibold block">Language / Accent</label>
-                        <select
-                          value={ttsLanguage}
-                          onChange={(e) => setTtsLanguage(e.target.value)}
-                          className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-blue-500"
+                      {/* Auto Read Aloud Toggle Switch */}
+                      <div className="flex items-center justify-between py-1 border-b border-[#2d2d2d] pb-2">
+                        <span className="text-slate-400 font-semibold">Auto Read Response</span>
+                        <button
+                          type="button"
+                          onClick={() => setAutoReadEnabled(!autoReadEnabled)}
+                          className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            autoReadEnabled ? 'bg-blue-600' : 'bg-[#3d3d3d]'
+                          }`}
+                          title="Toggle automatic speech playback on new messages"
                         >
-                          <option value="auto">Auto-Detect Language</option>
-                          <option value="vi-VN">Tiếng Việt (Vietnam)</option>
-                          <option value="en-US">English (United States)</option>
+                          <span
+                            className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                              autoReadEnabled ? 'translate-x-3' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Voice selection dropdown */}
+                      <div className="space-y-1.5">
+                        <label className="text-slate-400 font-semibold block">Select Speaker Voice</label>
+                        <select
+                          value={selectedVoiceName}
+                          onChange={(e) => setSelectedVoiceName(e.target.value)}
+                          className="w-full bg-[#2d2d2d] border border-[#3d3d3d] rounded-lg px-2.5 py-1.5 text-white focus:outline-none focus:border-blue-500 max-h-36 overflow-y-auto"
+                        >
+                          <option value="auto">🤖 Auto-Select (By Language)</option>
+                          {availableVoices.map((voice, idx) => (
+                            <option key={idx} value={voice.name}>
+                              🗣️ {voice.name} ({voice.lang})
+                            </option>
+                          ))}
                         </select>
                       </div>
 
