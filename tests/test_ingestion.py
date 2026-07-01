@@ -115,6 +115,28 @@ class TestIngestionEndpoints(unittest.TestCase):
             self.assertIn("Steps to configure", content)
 
     @patch("src.web_app.AssistantManager")
+    @patch("requests.get")
+    def test_ingest_url_duplicate(self, mock_get, mock_manager_class):
+        target_url = "https://support.optisigns.com/hc/en-us/articles/999-Test-URL-Article"
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+        state["articles"]["url-existing-slug"] = {
+            "title": "Existing Title",
+            "source_url": target_url,
+            "active": True
+        }
+        with open(self.state_file, "w") as f:
+            json.dump(state, f)
+            
+        payload = {
+            "url": target_url
+        }
+        
+        response = self.client.post("/api/ingest/url", json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Duplicate Ingestion", response.json()["detail"])
+
+    @patch("src.web_app.AssistantManager")
     def test_ingest_file(self, mock_manager_class):
         # Setup mock manager
         mock_manager = MagicMock()

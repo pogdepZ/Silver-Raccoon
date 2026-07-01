@@ -1048,6 +1048,17 @@ function App() {
   const handleUrlIngestion = (e) => {
     e.preventDefault();
     if (!urlInput.trim() || isIngesting) return;
+    
+    const cleaned = urlInput.trim().toLowerCase();
+    const isDuplicate = Object.values(articles).some(art => 
+      (art.source_url || '').toLowerCase() === cleaned
+    );
+    
+    if (isDuplicate) {
+      showToastNotification("This URL has already been ingested in the knowledge base.", "error");
+      return;
+    }
+    
     runIngestionPipeline(urlInput.trim(), 'url');
   };
 
@@ -1061,20 +1072,30 @@ function App() {
   const handleSelectAllPresets = () => {
     const allChecked = {};
     OPTSIGNS_API_PRESETS.forEach(p => {
-      allChecked[p.url] = true;
+      const isAlreadyIngested = Object.values(articles).some(art => 
+        (art.source_url || '').toLowerCase() === p.url.toLowerCase()
+      );
+      if (!isAlreadyIngested) {
+        allChecked[p.url] = true;
+      }
     });
     setCheckedPresets(allChecked);
   };
 
   const handleIngestApiPresets = async () => {
-    const urlsToIngest = Object.keys(checkedPresets).filter(url => checkedPresets[url]);
+    const urlsToIngest = Object.keys(checkedPresets).filter(url => {
+      if (!checkedPresets[url]) return false;
+      const isAlreadyIngested = Object.values(articles).some(art => 
+        (art.source_url || '').toLowerCase() === url.toLowerCase()
+      );
+      return !isAlreadyIngested;
+    });
+    
     if (urlsToIngest.length === 0) return;
     
     setIsIngesting(true);
     setShowPresetsSelector(false);
     
-    // Clear terminal steps and set status
-    setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
     setTerminalLogs(prev => [
       ...prev,
       `[${new Date().toLocaleTimeString()}] [BATCH] Starting batch ingestion of ${urlsToIngest.length} API presets...`,
@@ -1091,6 +1112,24 @@ function App() {
         `\n[${new Date().toLocaleTimeString()}] [BATCH] [${i + 1}/${urlsToIngest.length}] Scrapes: ${label}...`
       ]);
 
+      // Reset steps for this document
+      setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
+      
+      // Set first step as processing
+      setPipelineSteps(prev => prev.map((s, idx) => idx === 0 ? { ...s, status: 'processing' } : s));
+      
+      let currentStepIdx = 0;
+      const visualInterval = setInterval(() => {
+        if (currentStepIdx < 5) {
+          setPipelineSteps(prev => prev.map((s, idx) => {
+            if (idx === currentStepIdx) return { ...s, status: 'done' };
+            if (idx === currentStepIdx + 1) return { ...s, status: 'processing' };
+            return s;
+          }));
+          currentStepIdx++;
+        }
+      }, 500);
+
       try {
         const res = await fetch('/api/ingest/url', {
           method: 'POST',
@@ -1098,12 +1137,17 @@ function App() {
           body: JSON.stringify({ url: url })
         });
         
+        clearInterval(visualInterval);
+        
         if (!res.ok) {
           const errData = await res.json();
           throw new Error(errData.detail || 'Failed to ingest');
         }
         
         const data = await res.json();
+        
+        // Mark all steps as done
+        setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
         
         // Add to Recent ledger
         const newDoc = {
@@ -1121,11 +1165,24 @@ function App() {
           ...prev,
           `[${new Date().toLocaleTimeString()}] [SUCCESS] Ingested successfully. Slug: ${data.slug}`
         ]);
+        
+        // Short delay so they see the completed status
+        await new Promise(resolve => setTimeout(resolve, 800));
       } catch (err) {
+        clearInterval(visualInterval);
+        
+        // Mark remaining steps as failed
+        setPipelineSteps(prev => prev.map((s, idx) => {
+          if (idx === currentStepIdx || s.status === 'processing') return { ...s, status: 'failed' };
+          return s;
+        }));
+
         setTerminalLogs(prev => [
           ...prev,
           `[${new Date().toLocaleTimeString()}] [ERROR] Failed: ${label}. Reason: ${err.message}`
         ]);
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
@@ -1802,19 +1859,34 @@ function App() {
                         <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                           {OPTSIGNS_API_PRESETS.map((preset, idx) => {
                             const isChecked = !!checkedPresets[preset.url];
+                            const isAlreadyIngested = Object.values(articles).some(art => 
+                              (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
+                            );
                             return (
                               <label 
                                 key={idx} 
-                                className="flex items-start gap-2.5 cursor-pointer text-xs select-none hover:bg-slate-900/60 p-2 rounded-lg transition-colors border border-transparent hover:border-[#2d2d2d]"
+                                className={`flex items-start gap-2.5 text-xs select-none p-2 rounded-lg transition-colors border border-transparent ${
+                                  isAlreadyIngested 
+                                    ? 'opacity-40 cursor-not-allowed hover:bg-transparent' 
+                                    : 'cursor-pointer hover:bg-slate-900/60 hover:border-[#2d2d2d]'
+                                }`}
                               >
                                 <input
                                   type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleTogglePreset(preset.url)}
-                                  className="mt-0.5 accent-blue-500 cursor-pointer"
+                                  checked={isAlreadyIngested || isChecked}
+                                  disabled={isAlreadyIngested}
+                                  onChange={() => !isAlreadyIngested && handleTogglePreset(preset.url)}
+                                  className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed"
                                 />
                                 <div className="flex-1 min-w-0">
-                                  <span className="text-slate-200 font-semibold block text-[11px] leading-tight">{preset.title}</span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-slate-200 font-semibold block text-[11px] leading-tight">{preset.title}</span>
+                                    {isAlreadyIngested && (
+                                      <span className="text-[8px] bg-green-950/60 text-green-400 border border-green-800/30 px-1 py-0.5 rounded font-mono uppercase tracking-wider scale-90 origin-left shrink-0 font-bold">
+                                        Ingested
+                                      </span>
+                                    )}
+                                  </div>
                                   <span className="text-[9px] text-slate-500 block truncate mt-0.5" title={preset.url}>
                                     {preset.url}
                                   </span>

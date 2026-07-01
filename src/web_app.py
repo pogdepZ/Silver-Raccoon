@@ -545,6 +545,17 @@ def ingest_url(request: UrlIngestRequest):
         with open(state_path, "r", encoding="utf-8") as f:
             state = json.load(f)
             vector_store_name = state.get("file_search_store_name")
+            
+            # Check for duplicate ingestion URL
+            target_url = request.url.strip().lower()
+            for slug, meta in state.get("articles", {}).items():
+                if meta.get("source_url", "").strip().lower() == target_url:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Duplicate Ingestion: This URL has already been ingested (Slug: {slug})"
+                    )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
         
