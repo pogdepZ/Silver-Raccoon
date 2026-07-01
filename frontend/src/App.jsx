@@ -341,6 +341,17 @@ function App() {
         } else if (q.includes("designer") || q.includes("create")) {
           answer = "To create designs in OptiSigns using Designer:\n* Go to **Files/Assets**, select **Designer**.\n* Choose a template or blank canvas.\n* Add widgets, images, text, and configure transitions.\n* Save and assign to your playlists.\n\nArticle URL: https://support.optisigns.com/hc/en-us/articles/42087942047379-Getting-Started-with-Designer";
           sources = ["Getting Started with Designer (ID: 42087942047379)"];
+        } else if (q.includes("who are you") || q.includes("your name")) {
+          answer = "I am **OptiBot**, the customer support assistant for OptiSigns.com! I can help you configure screens, apps, play videos, or troubleshoot player issues.";
+        } else if (/[0-9]/.test(q) && (q.includes("+") || q.includes("-") || q.includes("*") || q.includes("/") || q.includes("="))) {
+          try {
+            // Clean expression for safe evaluation (only allow digits, space, and simple math symbols)
+            const expr = q.replace(/[^0-9+\-*/().\s]/g, "");
+            const result = Function(`"use strict"; return (${expr})`)();
+            answer = `The result of ${expr.trim()} is **${result}**.`;
+          } catch (e) {
+            answer = "I can calculate basic expressions for you. Please write it clearly (e.g. 1 + 2).";
+          }
         }
 
         setMessages(prev => [...prev, {
