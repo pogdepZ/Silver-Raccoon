@@ -244,6 +244,7 @@ function App() {
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
   const [testsRunning, setTestsRunning] = useState(false);
   const [testResults, setTestResults] = useState(null); // null, 'running', 'success', 'failed'
+  const [togglingSlugs, setTogglingSlugs] = useState({}); // slug -> 'toggling' | 'deleting' | null
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -486,6 +487,7 @@ function App() {
   };
 
   const toggleArticleActive = async (slug) => {
+    setTogglingSlugs(prev => ({ ...prev, [slug]: 'toggling' }));
     try {
       const res = await fetch(`/api/articles/${encodeURIComponent(slug)}/toggle-active`, {
         method: 'POST'
@@ -506,6 +508,33 @@ function App() {
     } catch (e) {
       console.error(e);
       showToastNotification('Failed to toggle article status', 'error');
+    } finally {
+      setTogglingSlugs(prev => ({ ...prev, [slug]: null }));
+    }
+  };
+
+  const deleteArticle = async (slug) => {
+    if (!window.confirm("Are you sure you want to permanently delete this article from RAG and local storage?")) {
+      return;
+    }
+    
+    setTogglingSlugs(prev => ({ ...prev, [slug]: 'deleting' }));
+    
+    try {
+      const res = await fetch(`/api/articles/${encodeURIComponent(slug)}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        throw new Error('Failed to delete article');
+      }
+      
+      setArticles(prev => prev.filter(art => art.slug !== slug));
+      showToastNotification('Article deleted permanently from RAG database', 'success');
+    } catch (e) {
+      console.error(e);
+      showToastNotification('Failed to delete article', 'error');
+    } finally {
+      setTogglingSlugs(prev => ({ ...prev, [slug]: null }));
     }
   };
 
@@ -1930,22 +1959,27 @@ function App() {
                               }`}
                             >
                               <td className="p-4 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleArticleActive(art.slug)}
-                                  className={`w-4 h-4 mx-auto rounded flex items-center justify-center border transition-all cursor-pointer ${
-                                    art.active !== false
-                                      ? 'bg-blue-600 border-blue-500 hover:bg-blue-700'
-                                      : 'bg-transparent border-[#4d4d4d] hover:border-slate-500'
-                                  }`}
-                                  title={art.active !== false ? "Click to deactivate this article" : "Click to activate this article"}
-                                >
-                                  {art.active !== false && (
-                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4">
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                  )}
-                                </button>
+                                {togglingSlugs[art.slug] === 'toggling' ? (
+                                  <div className="w-4 h-4 mx-auto rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleArticleActive(art.slug)}
+                                    disabled={!!togglingSlugs[art.slug]}
+                                    className={`w-4 h-4 mx-auto rounded flex items-center justify-center border transition-all cursor-pointer ${
+                                      art.active !== false
+                                        ? 'bg-blue-600 border-blue-500 hover:bg-blue-700'
+                                        : 'bg-transparent border-[#4d4d4d] hover:border-slate-500'
+                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    title={art.active !== false ? "Click to deactivate this article" : "Click to activate this article"}
+                                  >
+                                    {art.active !== false && (
+                                      <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                )}
                               </td>
                               <td className="p-4">
                                 <div className="flex flex-col gap-0.5 max-w-md sm:max-w-xl">
@@ -1995,6 +2029,18 @@ function App() {
                                       <LinkIcon className="w-3.5 h-3.5" />
                                     </a>
                                   )}
+                                  <button
+                                    onClick={() => deleteArticle(art.slug)}
+                                    disabled={!!togglingSlugs[art.slug]}
+                                    className="p-1 rounded bg-[#1c1d1f] hover:bg-red-950/40 border border-[#3d3d3d] hover:border-red-900/50 text-slate-400 hover:text-red-400 transition-all shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title="Delete article permanently from system"
+                                  >
+                                    {togglingSlugs[art.slug] === 'deleting' ? (
+                                      <div className="w-3.5 h-3.5 rounded-full border-2 border-red-500 border-t-transparent animate-spin" />
+                                    ) : (
+                                      <TrashIcon className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
                                 </div>
                               </td>
                             </tr>

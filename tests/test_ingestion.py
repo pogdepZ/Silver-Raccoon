@@ -305,3 +305,49 @@ class TestIngestionEndpoints(unittest.TestCase):
             state = json.load(f)
             self.assertEqual(state["articles"][dummy_slug]["active"], True)
             self.assertEqual(state["articles"][dummy_slug]["document_name"], "new-document-name-abc")
+
+    @patch("src.web_app.AssistantManager")
+    def test_delete_article(self, mock_manager_class):
+        mock_manager = MagicMock()
+        mock_manager.delete_file_from_assistant.return_value = True
+        mock_manager_class.return_value = mock_manager
+
+        dummy_slug = "test-article-for-deletion"
+        dummy_filepath = "data/articles/test-article-for-deletion.md"
+        
+        os.makedirs("data/articles", exist_ok=True)
+        with open(dummy_filepath, "w") as f:
+            f.write("Some dummy markdown text content for deletion")
+        self.created_files.append(dummy_filepath)
+
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+            
+        state["articles"][dummy_slug] = {
+            "title": "Test Delete Article",
+            "article_id": 999222,
+            "source_url": "https://support.optisigns.com/hc/en-us/articles/999222",
+            "filepath": dummy_filepath,
+            "document_name": "fileSearchStores/test-store-123/documents/doc-xyz-789",
+            "active": True
+        }
+        
+        with open(self.state_file, "w") as f:
+            json.dump(state, f)
+
+        # Execute DELETE
+        response = self.client.delete(f"/api/articles/{dummy_slug}")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        
+        # Verify assistant deletion is called
+        mock_manager.delete_file_from_assistant.assert_called_with("fileSearchStores/test-store-123/documents/doc-xyz-789")
+        
+        # Verify physical file deletion
+        self.assertFalse(os.path.exists(dummy_filepath))
+        
+        # Verify removed from state file
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+            self.assertNotIn(dummy_slug, state["articles"])

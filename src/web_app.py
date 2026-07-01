@@ -214,6 +214,57 @@ def toggle_article_active(slug: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to toggle article state: {str(e)}")
 
+@app.delete("/api/articles/{slug:path}")
+def delete_article(slug: str):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
+        
+    state_path = "gemini_state.json"
+    if not os.path.exists(state_path):
+        raise HTTPException(status_code=400, detail="Sync state file not found.")
+        
+    try:
+        with open(state_path, "r", encoding="utf-8") as f:
+            state = json.load(f)
+            
+        articles = state.get("articles", {})
+        if slug not in articles:
+            raise HTTPException(status_code=404, detail="Article not found in state.")
+            
+        article_info = articles[slug]
+        doc_name = article_info.get("document_name")
+        filepath = article_info.get("filepath")
+        
+        manager = AssistantManager(api_key=api_key)
+        
+        # 1. Delete from Vector Store if indexed
+        if doc_name:
+            try:
+                manager.delete_file_from_assistant(doc_name)
+            except Exception as e:
+                print(f"Non-blocking warning: Failed to delete doc from vector store: {e}")
+                
+        # 2. Delete the physical markdown file
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                print(f"Non-blocking warning: Failed to remove physical file: {e}")
+                
+        # 3. Remove from JSON state database
+        del articles[slug]
+        state["articles"] = articles
+        
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+            
+        return {"status": "success", "slug": slug, "message": "Article deleted permanently"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete article: {str(e)}")
+
 import subprocess
 @app.post("/api/tests/run")
 def run_unit_tests():
