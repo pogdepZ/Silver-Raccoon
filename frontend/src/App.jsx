@@ -760,15 +760,29 @@ function App() {
             </h3>
             <div className="flex-1 overflow-y-auto space-y-1 px-1">
               {articles.map((art, idx) => (
-                <a
+                <div
                   key={idx}
-                  href={art.source_url}
-                  target="_blank"
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-slate-300 hover:bg-[#2d2d2d]/60 hover:text-white truncate"
+                  onClick={() => openArticleInDrawer(art.slug)}
+                  className="group flex items-center justify-between px-2 py-1.5 rounded-md text-xs text-slate-300 hover:bg-[#2d2d2d]/60 hover:text-white transition-colors cursor-pointer select-none"
+                  title="Click to read cached article inline"
                 >
-                  <FileTextIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="truncate">{art.title}</span>
-                </a>
+                  <div className="flex items-center gap-2 truncate pr-1.5">
+                    <FileTextIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                    <span className="truncate">{art.title}</span>
+                  </div>
+                  {art.source_url && art.source_url !== '#' && (
+                    <a
+                      href={art.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#3d3d3d] rounded text-slate-400 hover:text-blue-400 transition-all shrink-0"
+                      title="View original help article URL"
+                    >
+                      <LinkIcon className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
               ))}
               {articles.length === 0 && (
                 <div className="text-xs text-slate-500 p-3 text-center italic">
