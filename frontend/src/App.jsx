@@ -243,6 +243,7 @@ function App() {
   const [ragActive, setRagActive] = useState(true);
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
   const [testsRunning, setTestsRunning] = useState(false);
+  const [testResults, setTestResults] = useState(null); // null, 'running', 'success', 'failed'
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -510,6 +511,7 @@ function App() {
 
   const handleRunTests = async () => {
     setTestsRunning(true);
+    setTestResults('running');
     setTerminalLogs(prev => [
       ...prev,
       `[${new Date().toLocaleTimeString()}] [SYSTEM] Triggered manual test runner execution request...`
@@ -528,11 +530,14 @@ function App() {
       ]);
       
       if (data.status === 'success') {
+        setTestResults('success');
         showToastNotification('All unit tests executed and PASSED!', 'success');
       } else {
+        setTestResults('failed');
         showToastNotification('Unit test run failed. Check terminal logs.', 'error');
       }
     } catch (e) {
+      setTestResults('failed');
       setTerminalLogs(prev => [
         ...prev,
         `[${new Date().toLocaleTimeString()}] [ERROR] Manual test run failed: ${e.message}`
@@ -541,6 +546,39 @@ function App() {
     } finally {
       setTestsRunning(false);
     }
+  };
+
+  const renderTestCaseRow = (test) => {
+    let statusDot = <div className="w-2 h-2 rounded-full bg-slate-700" />;
+    let statusText = "Pending";
+    let statusClass = "text-slate-500";
+
+    if (testResults === 'running') {
+      statusDot = <div className="w-2.5 h-2.5 rounded-full border border-blue-500 border-t-transparent animate-spin shrink-0" />;
+      statusText = "Running";
+      statusClass = "text-blue-400 animate-pulse";
+    } else if (testResults === 'success') {
+      statusDot = <CheckCircleIcon className="w-3.5 h-3.5 text-green-500 shrink-0" />;
+      statusText = "Passed";
+      statusClass = "text-green-400 font-semibold";
+    } else if (testResults === 'failed') {
+      statusDot = <div className="w-3 h-3 rounded-full bg-red-600 text-white flex items-center justify-center text-[7px] font-bold shrink-0">!</div>;
+      statusText = "Failed";
+      statusClass = "text-red-400 font-semibold";
+    }
+
+    return (
+      <div key={test.id} className="flex items-center justify-between p-1.5 rounded bg-[#121620]/60 border border-[#1b2330]/40 text-[10px]">
+        <div className="flex flex-col gap-0.5 truncate max-w-[70%]">
+          <span className="font-mono text-slate-300 font-semibold truncate" title={test.name}>{test.name}</span>
+          <span className="text-[9px] text-slate-500 truncate" title={test.desc}>{test.desc}</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {statusDot}
+          <span className={`text-[9px] font-mono uppercase tracking-wide ${statusClass}`}>{statusText}</span>
+        </div>
+      </div>
+    );
   };
 
   const scrollToBottom = () => {
@@ -1697,14 +1735,14 @@ function App() {
         </main>
       )}
 
-      {/* 5. SYSTEM DIAGNOSTICS LOGS VIEW (Only shown when activeView === 'logs') */}
+      {/* 5. SYSTEM DIAGNOSTICS LOGS & TEST RUNNER VIEW */}
       {activeView === 'logs' && (
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#090b10]">
           {/* Header */}
-          <header className="p-4 border-b border-[#1b2330] bg-[#0c0f17] shrink-0 flex items-center justify-between">
+          <header className="p-4 border-b border-[#1b2330] bg-[#0c0f17] shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="font-semibold text-white text-base sm:text-lg">System Logs</h2>
-              <p className="text-xs text-slate-500">Live diagnostics and pipeline execution traces</p>
+              <h2 className="font-semibold text-white text-base sm:text-lg">System Logs & Test Explorer</h2>
+              <p className="text-xs text-slate-500">Live diagnostics and automated quality assurance tests</p>
             </div>
             <div className="flex items-center gap-2">
               <button 
@@ -1727,10 +1765,13 @@ function App() {
                 )}
               </button>
               <button 
-                onClick={() => setTerminalLogs([
-                  `[${new Date().toLocaleTimeString()}] Diagnostics cache cleared.`,
-                  'Listening for system operations...'
-                ])}
+                onClick={() => {
+                  setTerminalLogs([
+                    `[${new Date().toLocaleTimeString()}] Diagnostics cache cleared.`,
+                    'Listening for system operations...'
+                  ]);
+                  setTestResults(null);
+                }}
                 className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-500/30 px-3 py-1.5 rounded bg-red-950/20 transition-all select-none cursor-pointer"
               >
                 Clear Logs
@@ -1738,8 +1779,69 @@ function App() {
             </div>
           </header>
 
-          {/* Terminal Console */}
-          <div className="flex-1 p-6 overflow-hidden flex flex-col">
+          {/* Main split dashboard (Left: Test Explorer list, Right: Terminal) */}
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 lg:p-6 gap-6">
+            
+            {/* Left: Test Explorer checklist panel */}
+            <div className="w-full lg:w-72 bg-[#0c0f17] rounded-xl border border-[#1b2330] p-4 flex flex-col overflow-hidden shrink-0">
+              <div className="border-b border-[#1b2330] pb-2 mb-3 shrink-0">
+                <h3 className="font-semibold text-white text-xs uppercase tracking-wider">Test Suite Coverage</h3>
+                <p className="text-[10px] text-slate-500">22 unit tests grouped by module</p>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                {/* Suite 1: Scraper */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">1. Scraper Suite</span>
+                  <div className="space-y-1 pl-1">
+                    {[
+                      { id: 'fetch', name: 'test_fetch_articles', desc: 'Zendesk API collection' },
+                      { id: 'clean', name: 'test_clean_html', desc: 'Boilerplate strip & MD conversion' },
+                      { id: 'links', name: 'test_absolute_links', desc: 'Citation URL normalization' }
+                    ].map(t => renderTestCaseRow(t))}
+                  </div>
+                </div>
+
+                {/* Suite 2: AI Sync & Delta */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">2. Ingest & Sync Delta</span>
+                  <div className="space-y-1 pl-1">
+                    {[
+                      { id: 'init', name: 'test_state_initialization', desc: 'Fresh json state fallback' },
+                      { id: 'delta', name: 'test_delta_detection', desc: 'Ingestion hash matching' },
+                      { id: 'prune', name: 'test_prune_deleted', desc: 'Auto-delete removed articles' },
+                      { id: 'lock', name: 'test_parallel_locks', desc: 'Thread-safe concurrent uploads' }
+                    ].map(t => renderTestCaseRow(t))}
+                  </div>
+                </div>
+
+                {/* Suite 3: Query Router */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">3. Query & Classification</span>
+                  <div className="space-y-1 pl-1">
+                    {[
+                      { id: 'class', name: 'test_classification_logic', desc: 'Intent routing classification' },
+                      { id: 'ground', name: 'test_grounding_metadata', desc: 'Grounding citations parser' },
+                      { id: 'fallback', name: 'test_title_fallback', desc: 'Portable metadata retrieval' }
+                    ].map(t => renderTestCaseRow(t))}
+                  </div>
+                </div>
+
+                {/* Suite 4: FastAPI Web Server */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">4. API & Security Locks</span>
+                  <div className="space-y-1 pl-1">
+                    {[
+                      { id: 'endpoint', name: 'test_get_article_endpoint', desc: 'Secure local file content server' },
+                      { id: 'traversal', name: 'test_traversal_prevention', desc: 'Regex path traversal block' },
+                      { id: 'explore', name: 'test_explore_relevance', desc: 'Similarity score evaluator' }
+                    ].map(t => renderTestCaseRow(t))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Terminal Console */}
             <div className="flex-1 bg-black rounded-xl border border-[#1b2330] flex flex-col overflow-hidden shadow-2xl">
               
               {/* Terminal Window Header */}
