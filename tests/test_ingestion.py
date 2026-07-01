@@ -147,3 +147,40 @@ class TestIngestionEndpoints(unittest.TestCase):
         response = self.client.post("/api/ingest/file", files=file_data)
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unsupported file format", response.json()["detail"])
+
+    def test_get_article_content_success(self):
+        slug = "test-article-slug-123"
+        filepath = os.path.join("data/articles", f"{slug}.md")
+        self.created_files.append(filepath)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("This is the article body content.")
+            
+        with open(self.state_file, "w") as f:
+            json.dump({
+                "articles": {
+                    slug: {
+                        "title": "Test Article Title",
+                        "source_url": "https://example.com/test-article",
+                        "filepath": filepath
+                    }
+                }
+            }, f)
+            
+        response = self.client.get(f"/api/articles/{slug}")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["slug"], slug)
+        self.assertEqual(data["title"], "Test Article Title")
+        self.assertEqual(data["content"], "This is the article body content.")
+        self.assertEqual(data["source_url"], "https://example.com/test-article")
+
+    def test_get_article_content_not_found(self):
+        response = self.client.get("/api/articles/non-existent-article-slug")
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("content file not found", response.json()["detail"])
+
+    def test_get_article_content_invalid_slug(self):
+        response = self.client.get("/api/articles/invalid..slug/path")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid article identifier", response.json()["detail"])

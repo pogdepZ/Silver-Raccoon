@@ -106,6 +106,51 @@ def get_status():
         "articles": sorted(articles, key=lambda x: x["title"])
     }
 
+@app.get("/api/articles/{slug:path}")
+def get_article_content(slug: str):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", slug):
+        raise HTTPException(status_code=400, detail="Invalid article identifier")
+    
+    state_path = "gemini_state.json"
+    state = {}
+    if os.path.exists(state_path):
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            pass
+
+    article_info = state.get("articles", {}).get(slug)
+    
+    filepath = None
+    if article_info and "filepath" in article_info:
+        filepath = article_info["filepath"]
+    else:
+        for ext in [".md", ".txt"]:
+            test_path = os.path.join("data/articles", f"{slug}{ext}")
+            if os.path.exists(test_path):
+                filepath = test_path
+                break
+                
+    if not filepath or not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Article content file not found")
+        
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        title = article_info.get("title", slug) if article_info else slug
+        source_url = article_info.get("source_url", "#") if article_info else "#"
+        
+        return {
+            "slug": slug,
+            "title": title,
+            "content": content,
+            "source_url": source_url
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read article content: {str(e)}")
+
 @app.post("/api/chat")
 def chat_endpoint(request: ChatRequest):
     api_key = os.getenv("GEMINI_API_KEY")

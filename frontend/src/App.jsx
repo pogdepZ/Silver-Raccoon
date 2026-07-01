@@ -109,6 +109,15 @@ function CheckCircleIcon({ className = "w-4 h-4" }) {
   );
 }
 
+function XMarkIcon({ className = "w-5 h-5" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  );
+}
+
 function ChevronDownIcon({ className = "w-4 h-4" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -196,6 +205,44 @@ function App() {
   const [activeStoreName, setActiveStoreName] = useState('Not Initialized');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const chatContainerRef = useRef(null);
+
+  // --- RAG DOCUMENT DRAWER STATES ---
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerArticle, setDrawerArticle] = useState(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+
+  const findArticleBySource = (src) => {
+    if (!src) return null;
+    const match = src.match(/(\d+)/);
+    if (match) {
+      const id = parseInt(match[0]);
+      const found = articles.find(a => a.article_id === id);
+      if (found) return found;
+    }
+    const filename = src.split('/').pop().toLowerCase();
+    return articles.find(a => {
+      const slugLower = a.slug.toLowerCase();
+      return slugLower.includes(filename) || filename.includes(slugLower) || (a.article_id && filename.includes(a.article_id.toString()));
+    });
+  };
+
+  const openArticleInDrawer = async (slug) => {
+    setDrawerOpen(true);
+    setDrawerLoading(true);
+    setDrawerArticle(null);
+    try {
+      const res = await fetch(`/api/articles/${slug}`);
+      if (!res.ok) throw new Error('Failed to load article content');
+      const data = await res.json();
+      setDrawerArticle(data);
+    } catch (error) {
+      console.error("Error fetching article content:", error);
+      showToastNotification('Could not load article content', 'error');
+      setDrawerOpen(false);
+    } finally {
+      setDrawerLoading(false);
+    }
+  };
 
   // --- KNOWLEDGE BASE VIEW STATES ---
   const [activeKbTab, setActiveKbTab] = useState('file'); // 'file', 'url', 'manual'
@@ -730,15 +777,31 @@ function App() {
                             <CheckCircleIcon className="w-3.5 h-3.5 text-green-500" /> Grounded Sources
                           </div>
                           <div className="flex flex-wrap gap-1.5">
-                            {msg.sources.map((src, sIdx) => (
-                              <span 
-                                key={sIdx} 
-                                className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-[#3d3d3d] text-slate-400 hover:border-slate-300 max-w-xs truncate cursor-help"
-                                title={src}
-                              >
-                                {src.split('/').pop()}
-                              </span>
-                            ))}
+                            {msg.sources.map((src, sIdx) => {
+                              const matchingArt = findArticleBySource(src);
+                              const displayName = matchingArt ? matchingArt.title : src.split('/').pop();
+                              return (
+                                <button
+                                  key={sIdx}
+                                  onClick={() => {
+                                    if (matchingArt) {
+                                      openArticleInDrawer(matchingArt.slug);
+                                    } else {
+                                      if (src.startsWith('http')) {
+                                        window.open(src, '_blank');
+                                      } else {
+                                        showToastNotification('Source file is not cached locally', 'warning');
+                                      }
+                                    }
+                                  }}
+                                  className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-[#3d3d3d] text-slate-400 hover:text-white hover:border-slate-300 hover:bg-[#2d2d2d] max-w-xs truncate cursor-pointer transition-all flex items-center gap-1 font-medium select-none"
+                                  title={matchingArt ? `Click to read: ${matchingArt.title}` : src}
+                                >
+                                  <BookOpenIcon className="w-2.5 h-2.5 text-blue-400 shrink-0" />
+                                  <span>{displayName}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1055,6 +1118,70 @@ function App() {
           </div>
         </main>
       )}
+
+      {/* RAG Slide-over Document Drawer */}
+      <div 
+        className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${
+          drawerOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={() => setDrawerOpen(false)}
+      />
+
+      <div 
+        className={`fixed top-0 right-0 bottom-0 w-[550px] max-w-[90vw] bg-[#171c26] border-l border-[#2d2d2d] shadow-2xl z-50 transform transition-transform duration-300 ease-out flex flex-col ${
+          drawerOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {/* Drawer Header */}
+        <div className="p-4 border-b border-[#2d2d2d] flex items-center justify-between shrink-0 bg-[#121620]">
+          <div className="flex items-center gap-2 text-white">
+            <BookOpenIcon className="w-5 h-5 text-blue-400" />
+            <h3 className="font-semibold text-sm truncate max-w-[320px]">
+              {drawerLoading ? 'Loading Article...' : (drawerArticle ? drawerArticle.title : 'RAG Source Document')}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            {drawerArticle && drawerArticle.source_url && drawerArticle.source_url !== '#' && (
+              <a 
+                href={drawerArticle.source_url} 
+                target="_blank" 
+                rel="noreferrer"
+                className="text-xs text-blue-400 hover:underline flex items-center gap-1 bg-slate-900 border border-[#2d2d2d] px-2.5 py-1 rounded select-none"
+              >
+                <LinkIcon className="w-3 h-3" />
+                <span>Original URL</span>
+              </a>
+            )}
+            <button 
+              onClick={() => setDrawerOpen(false)}
+              className="text-slate-400 hover:text-white p-1 rounded hover:bg-[#2d2d2d] transition-colors"
+            >
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Drawer Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-slate-300 text-sm leading-relaxed select-text">
+          {drawerLoading ? (
+            <div className="flex flex-col items-center justify-center h-64 space-y-3">
+              <div className="w-8 h-8 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+              <span className="text-xs text-slate-400 font-medium animate-pulse">Retrieving RAG source content...</span>
+            </div>
+          ) : drawerArticle ? (
+            <div className="space-y-4">
+              <div 
+                className="prose prose-invert max-w-none text-xs"
+                dangerouslySetInnerHTML={{ __html: formatMarkdown(drawerArticle.content) }} 
+              />
+            </div>
+          ) : (
+            <div className="text-center text-slate-500 py-12">
+              No document content loaded.
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   );
