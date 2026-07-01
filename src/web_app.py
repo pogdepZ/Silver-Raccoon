@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+from src.query_router import handle_query
 
 load_dotenv()
 
@@ -121,40 +122,8 @@ def chat_endpoint(request: ChatRequest):
         
     try:
         client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=request.message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                tools=[
-                    types.Tool(
-                        file_search=types.FileSearch(
-                            file_search_store_names=[vector_store_name]
-                        )
-                    )
-                ],
-                temperature=0.0,
-            )
-        )
-        
-        # Extract sources if available
-        sources = []
-        if response.candidates and response.candidates[0].grounding_metadata:
-            metadata = response.candidates[0].grounding_metadata
-            if metadata.grounding_chunks:
-                for chunk in metadata.grounding_chunks:
-                    title = "Vector Store Chunk"
-                    if chunk.retrieved_context:
-                        title = chunk.retrieved_context.uri or "Vector Store Chunk"
-                    elif chunk.web:
-                        title = chunk.web.title or chunk.web.uri
-                    if title not in sources:
-                        sources.append(title)
-                        
-        return {
-            "answer": response.text or "[No response text generated]",
-            "sources": sources
-        }
+        result = handle_query(client, request.message, vector_store_name)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
 

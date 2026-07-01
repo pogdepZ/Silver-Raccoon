@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-// --- Native SVG Icons for Light Theme SaaS Design ---
+// --- Native SVG Icons for Dark Theme SaaS Design ---
 function BotIcon({ className = "w-5 h-5" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -121,7 +121,7 @@ function WordStream({ text, onComplete }) {
   return <span dangerouslySetInnerHTML={{ __html: formatMarkdown(displayedText) }} />;
 }
 
-// Global markdown helper supporting bold, lists, inline code, and code blocks
+// Global markdown helper supporting bold, lists, inline code, and code blocks for dark theme
 const formatMarkdown = (text) => {
   if (!text) return '';
   // Escape HTML
@@ -131,22 +131,22 @@ const formatMarkdown = (text) => {
     .replace(/>/g, "&gt;");
 
   // Convert code blocks (```code```)
-  formatted = formatted.replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-100 text-slate-800 p-3 rounded-lg border border-slate-200 text-xs font-mono overflow-x-auto my-2 leading-relaxed">$1</pre>');
+  formatted = formatted.replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-900 text-slate-200 p-3 rounded-lg border border-[#3d3d3d] text-xs font-mono overflow-x-auto my-2 leading-relaxed">$1</pre>');
 
   // Convert bold (**text**)
-  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>');
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
   
   // Convert inline code (`code`)
-  formatted = formatted.replace(/`(.*?)`/g, '<code class="bg-slate-100 text-red-600 px-1 py-0.5 rounded text-xs font-mono font-medium">$1</code>');
+  formatted = formatted.replace(/`(.*?)`/g, '<code class="bg-[#191919] text-pink-400 px-1 py-0.5 rounded text-xs font-mono font-medium">$1</code>');
   
   // Convert links [text](url)
-  formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-600 hover:underline inline-flex items-center">$1</a>');
+  formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-400 hover:underline inline-flex items-center">$1</a>');
   
   // Convert raw URLs
-  formatted = formatted.replace(/(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline">$1</a>');
+  formatted = formatted.replace(/(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-400 hover:underline">$1</a>');
 
   // Convert bullet points
-  formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1 text-slate-700">$1</li>');
+  formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1 text-slate-300">$1</li>');
 
   // Wrap list groups
   return formatted.split('\n\n').map(p => {
@@ -281,7 +281,7 @@ function App() {
         let answer = "I could not find relevant documentation for this request in the OptiSigns help center.";
         let sources = [];
         
-        const q = inputValue.toLowerCase();
+        const q = userMessage.content.toLowerCase();
         if (q.includes("youtube")) {
           answer = "To add a YouTube video to OptiSigns, follow these steps:\n* Log in to your OptiSigns portal.\n* Click on **Files/Assets** and choose **App**.\n* Find **YouTube** and paste your video link.\n* Click **Save**.\n\nArticle URL: https://support.optisigns.com/hc/en-us/articles/360051014713-How-to-use-YouTube-with-OptiSigns";
           sources = ["How to use YouTube with OptiSigns (ID: 360051014713)"];
@@ -300,23 +300,22 @@ function App() {
         setIsLoading(false);
       }, 1000);
     } finally {
-      // Clean loading state if fetched successfully
       if (isLoading) setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex w-screen h-screen overflow-hidden bg-[#fcfcfb] text-[#37352f] antialiased">
+    <div className="flex w-screen h-screen overflow-hidden bg-[#202123] text-slate-200 antialiased">
       {/* 1. LEFT SIDEBAR (Locked height, static position, never scrolls with page) */}
-      <aside className="w-64 bg-[#f7f7f5] border-r border-[#ecece9] flex flex-col h-full shrink-0 select-none">
+      <aside className="w-64 bg-[#191919] border-r border-[#2d2d2d] flex flex-col h-full shrink-0 select-none">
         
         {/* App Logo */}
-        <div className="p-4 border-b border-[#ecece9] flex items-center gap-2.5 shrink-0">
+        <div className="p-4 border-b border-[#2d2d2d] flex items-center gap-2.5 shrink-0">
           <div className="w-6 h-6 rounded bg-[#2563eb] text-white flex items-center justify-center font-bold text-xs shadow-sm">
             O
           </div>
-          <span className="font-semibold text-slate-800 text-sm tracking-wide">OptiBot</span>
-          <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 font-medium">SaaS</span>
+          <span className="font-semibold text-white text-sm tracking-wide">OptiBot</span>
+          <span className="text-[10px] bg-blue-900/30 text-blue-400 px-1.5 py-0.5 rounded border border-blue-800/30 font-medium">SaaS</span>
         </div>
 
         {/* Sidebar Middle Area: Nav items + Ingested Articles (Flexible & Scrollable) */}
@@ -324,23 +323,23 @@ function App() {
           
           {/* Navigation items (shrink-0) */}
           <div className="space-y-1 shrink-0 mb-6">
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium bg-[#efefe9] text-slate-900 cursor-pointer">
-              <MessageSquareIcon className="w-4 h-4 text-slate-600" />
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium bg-[#2d2d2d] text-white cursor-pointer">
+              <MessageSquareIcon className="w-4 h-4 text-slate-300" />
               <span>Chat</span>
             </div>
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-500 hover:bg-[#efefe9]/40 cursor-not-allowed">
-              <BookOpenIcon className="w-4 h-4 text-slate-400" />
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-400 hover:bg-[#2d2d2d]/40 cursor-not-allowed">
+              <BookOpenIcon className="w-4 h-4 text-slate-500" />
               <span>Knowledge Base</span>
             </div>
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-500 hover:bg-[#efefe9]/40 cursor-not-allowed">
-              <TerminalIcon className="w-4 h-4 text-slate-400" />
+            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-400 hover:bg-[#2d2d2d]/40 cursor-not-allowed">
+              <TerminalIcon className="w-4 h-4 text-slate-500" />
               <span>Logs</span>
             </div>
           </div>
 
           {/* Ingested Articles section (flex-1, scrolls independently if overflowed) */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <h3 className="px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 shrink-0">
+            <h3 className="px-3 text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2 shrink-0">
               Ingested Articles ({articles.length})
             </h3>
             <div className="flex-1 overflow-y-auto space-y-1 px-1">
@@ -349,14 +348,14 @@ function App() {
                   key={idx}
                   href={art.source_url}
                   target="_blank"
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-slate-600 hover:bg-[#efefe9]/60 hover:text-slate-900 truncate"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-slate-300 hover:bg-[#2d2d2d]/60 hover:text-white truncate"
                 >
                   <FileTextIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <span className="truncate">{art.title}</span>
                 </a>
               ))}
               {articles.length === 0 && (
-                <div className="text-xs text-slate-400 p-3 text-center italic">
+                <div className="text-xs text-slate-500 p-3 text-center italic">
                   No articles loaded.
                 </div>
               )}
@@ -366,39 +365,39 @@ function App() {
 
         {/* Sync dashboard at bottom of sidebar (shrink-0) */}
         {syncStats && (
-          <div className="p-4 border-t border-[#ecece9] bg-[#efefe9]/30 text-xs shrink-0">
-            <div className="text-[10px] uppercase font-bold text-slate-400 mb-2 flex items-center gap-1">
-              <ActivityIcon className="w-3.5 h-3.5 text-green-600" /> Sync Job Stats
+          <div className="p-4 border-t border-[#2d2d2d] bg-[#2d2d2d]/10 text-xs shrink-0">
+            <div className="text-[10px] uppercase font-bold text-slate-500 mb-2 flex items-center gap-1">
+              <ActivityIcon className="w-3.5 h-3.5 text-green-500" /> Sync Job Stats
             </div>
             <div className="grid grid-cols-2 gap-2 text-center text-xs mb-2">
-              <div className="bg-white p-1.5 rounded border border-[#ecece9]">
-                <div className="text-slate-400 text-[9px]">Scraped</div>
-                <div className="font-semibold text-slate-800">{syncStats.total_scraped || 0}</div>
+              <div className="bg-[#191919] p-1.5 rounded border border-[#2d2d2d]">
+                <div className="text-slate-500 text-[9px]">Scraped</div>
+                <div className="font-semibold text-slate-300">{syncStats.total_scraped || 0}</div>
               </div>
-              <div className="bg-white p-1.5 rounded border border-[#ecece9]">
-                <div className="text-slate-400 text-[9px]">Added</div>
-                <div className="font-semibold text-brand-600">{(syncStats.added || 0)}</div>
+              <div className="bg-[#191919] p-1.5 rounded border border-[#2d2d2d]">
+                <div className="text-slate-500 text-[9px]">Added</div>
+                <div className="font-semibold text-brand-500">{(syncStats.added || 0)}</div>
               </div>
             </div>
-            <div className="text-[10px] text-slate-500 truncate" title={activeStoreName}>
-              Store: <span className="font-mono text-slate-600 text-[9px]">{activeStoreName.split('/').pop()}</span>
+            <div className="text-[10px] text-slate-400 truncate" title={activeStoreName}>
+              Store: <span className="font-mono text-slate-500 text-[9px]">{activeStoreName.split('/').pop()}</span>
             </div>
           </div>
         )}
       </aside>
 
       {/* 2. MAIN CHAT AREA (Flex grow) */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-white">
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
         
         {/* Top Header (fixed) */}
-        <header className="p-4 border-b border-[#ecece9] flex items-center justify-between bg-white/80 backdrop-blur-sm shrink-0">
+        <header className="p-4 border-b border-[#2d2d2d] flex items-center justify-between bg-[#202123]/80 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-slate-800 text-sm sm:text-base">OptiBot AI Assistant</h2>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">
+            <h2 className="font-semibold text-white text-sm sm:text-base">OptiBot AI Assistant</h2>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-950/30 text-green-400 border border-green-800/30">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse"></span> Grounded
             </span>
           </div>
-          <div className="text-xs text-slate-500 font-mono bg-[#f7f7f5] border border-[#ecece9] px-2.5 py-1 rounded">
+          <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
             gemini-2.5-flash
           </div>
         </header>
@@ -425,8 +424,8 @@ function App() {
                   {/* Avatar Icon */}
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm border ${
                     isUser 
-                      ? 'bg-blue-50 text-blue-600 border-blue-100' 
-                      : 'bg-[#f7f7f5] text-slate-600 border-[#ecece9]'
+                      ? 'bg-blue-950/30 text-blue-400 border-blue-800/30' 
+                      : 'bg-[#2d2d2d] text-slate-300 border-[#3d3d3d]'
                   }`}>
                     {isUser ? <UserIcon className="w-4 h-4" /> : <BotIcon className="w-4 h-4" />}
                   </div>
@@ -437,7 +436,7 @@ function App() {
                     <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
                       isUser 
                         ? 'bg-[#2563eb] text-white rounded-tr-none shadow-sm' 
-                        : 'bg-[#f4f4f5] text-[#18181b] rounded-tl-none border border-slate-200'
+                        : 'bg-[#2d2d2d] text-slate-200 rounded-tl-none border border-[#3d3d3d]'
                     }`}>
                       {msg.role === 'assistant' && msg.isStreaming ? (
                         <WordStream 
@@ -454,14 +453,14 @@ function App() {
                     {/* Sources section under AI bubble */}
                     {!isUser && msg.sources && msg.sources.length > 0 && (
                       <div className="mt-1 px-1">
-                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
-                          <CheckCircleIcon className="w-3.5 h-3.5 text-green-600" /> Grounded Sources
+                        <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <CheckCircleIcon className="w-3.5 h-3.5 text-green-500" /> Grounded Sources
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {msg.sources.map((src, sIdx) => (
                             <span 
                               key={sIdx} 
-                              className="text-[10px] px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-600 hover:border-slate-300 max-w-xs truncate cursor-help"
+                              className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-[#3d3d3d] text-slate-400 hover:border-slate-300 max-w-xs truncate cursor-help"
                               title={src}
                             >
                               {src.split('/').pop()}
@@ -478,12 +477,12 @@ function App() {
             {/* Loading thinking state */}
             {isLoading && (
               <div className="flex gap-4 max-w-sm">
-                <div className="w-8 h-8 rounded-lg bg-[#f7f7f5] text-slate-600 border border-[#ecece9] flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-[#2d2d2d] text-slate-300 border border-[#3d3d3d] flex items-center justify-center shrink-0">
                   <BotIcon className="w-4 h-4" />
                 </div>
-                <div className="bg-[#f4f4f5] text-[#18181b] rounded-2xl rounded-tl-none p-4 border border-slate-200 text-xs flex items-center gap-2">
+                <div className="bg-[#2d2d2d] text-slate-200 rounded-2xl rounded-tl-none p-4 border border-[#3d3d3d] text-xs flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
-                  <span className="text-slate-500 font-medium">OptiBot is thinking...</span>
+                  <span className="text-slate-400 font-medium">OptiBot is thinking...</span>
                 </div>
               </div>
             )}
@@ -495,14 +494,14 @@ function App() {
           <button 
             onClick={scrollToBottom}
             title="Scroll to bottom"
-            className="absolute bottom-28 right-8 bg-white hover:bg-slate-50 text-slate-600 p-2.5 rounded-full shadow-lg border border-slate-200 transition-all transform hover:scale-105 z-10 flex items-center justify-center animate-bounce"
+            className="absolute bottom-28 right-8 bg-[#2d2d2d] hover:bg-[#3d3d3d] text-slate-300 p-2.5 rounded-full shadow-lg border border-[#3d3d3d] transition-all transform hover:scale-105 z-10 flex items-center justify-center animate-bounce"
           >
-            <ChevronDownIcon className="w-4.5 h-4.5 text-slate-500" />
+            <ChevronDownIcon className="w-4.5 h-4.5 text-slate-400" />
           </button>
         )}
 
         {/* 4. INPUT BOX (Fixed at bottom, shrink-0) */}
-        <div className="p-5 border-t border-[#ecece9] bg-white/80 backdrop-blur-md shrink-0 w-full">
+        <div className="p-5 border-t border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-md shrink-0 w-full">
           <div className="max-w-3xl mx-auto">
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <input
@@ -511,7 +510,7 @@ function App() {
                 onChange={(e) => setInputValue(e.target.value)}
                 disabled={isLoading}
                 placeholder="Ask OptiBot about OptiSigns..."
-                className="flex-1 bg-white border border-[#e2e2e0] rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
                 type="submit"
@@ -523,7 +522,7 @@ function App() {
               </button>
             </form>
           </div>
-          <p className="text-center text-[10px] text-slate-400 mt-3 select-none">
+          <p className="text-center text-[10px] text-slate-500 mt-3 select-none">
             OptiBot operates strictly on support documents from support.optisigns.com. Coded in React + FastAPI.
           </p>
         </div>

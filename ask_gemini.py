@@ -88,49 +88,28 @@ def main():
     # 4. Initialize client
     client = genai.Client(api_key=api_key)
 
-    # 5. Query Gemini with File Search Grounding
-    print("Querying Gemini (grounded search)...")
+    # 5. Query Gemini (routed & classified search)
+    print("Querying Gemini (routed search)...")
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=question,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                tools=[
-                    types.Tool(
-                        file_search=types.FileSearch(
-                            file_search_store_names=[vector_store_name]
-                        )
-                    )
-                ],
-                temperature=0.0,
-            )
-        )
+        from src.query_router import handle_query
+        result = handle_query(client, question, vector_store_name)
     except Exception as e:
-        print(f"ERROR: Failed to generate content: {e}")
+        print(f"ERROR: Failed to query assistant: {e}")
         sys.exit(1)
 
     # 6. Output Response
+    print(f"\nClassification Category: {result.get('classification')}")
     print("\nOptiBot Response:")
     print("-----------------------------------------")
-    if response.text:
-        print(response.text)
-    else:
-        print("[No text returned in response]")
+    print(result.get("answer"))
     print("-----------------------------------------")
 
     # 7. Print Grounding Metadata (Citations / Sources)
-    if response.candidates and response.candidates[0].grounding_metadata:
-        metadata = response.candidates[0].grounding_metadata
-        if metadata.grounding_chunks:
-            print("\nGrounding sources used:")
-            for idx, chunk in enumerate(metadata.grounding_chunks):
-                title = chunk.web.title if chunk.web else ""
-                uri = chunk.web.uri if chunk.web else ""
-                if chunk.retrieved_context:
-                    # In case of custom store chunks
-                    title = chunk.retrieved_context.uri or "Vector Store Chunk"
-                print(f"  [{idx + 1}] Source: {title}")
+    sources = result.get("sources", [])
+    if sources:
+        print("\nGrounding sources used:")
+        for idx, src in enumerate(sources):
+            print(f"  [{idx + 1}] Source: {src}")
     
     sys.exit(0)
 
