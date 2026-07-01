@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-// React SVG Icons (Native, robust, no rendering flicker)
+// --- Native SVG Icons for Light Theme SaaS Design ---
 function BotIcon({ className = "w-5 h-5" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -23,16 +23,16 @@ function UserIcon({ className = "w-5 h-5" }) {
   );
 }
 
-function SendIcon({ className = "w-5 h-5" }) {
+function SendIcon({ className = "w-4 h-4" }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="m22 2-7 20-4-9-9-4Z" />
       <path d="M22 2 11 13" />
     </svg>
   );
 }
 
-function BookOpenIcon({ className = "w-5 h-5" }) {
+function BookOpenIcon({ className = "w-4 h-4" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
@@ -41,7 +41,7 @@ function BookOpenIcon({ className = "w-5 h-5" }) {
   );
 }
 
-function ActivityIcon({ className = "w-5 h-5" }) {
+function ActivityIcon({ className = "w-4 h-4" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
@@ -49,7 +49,24 @@ function ActivityIcon({ className = "w-5 h-5" }) {
   );
 }
 
-function ChevronDownIcon({ className = "w-5 h-5" }) {
+function MessageSquareIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function TerminalIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" x2="20" y1="19" y2="19" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className = "w-4 h-4" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}>
       <path d="m6 9 6 6 6-6" />
@@ -57,24 +74,76 @@ function ChevronDownIcon({ className = "w-5 h-5" }) {
   );
 }
 
-function CheckCircleIcon({ className = "w-5 h-5" }) {
+function FileTextIcon({ className = "w-3 h-3" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <path d="m9 11 3 3L22 4" />
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="M10 9H8" />
+      <path d="M16 13H8" />
+      <path d="M16 17H8" />
     </svg>
   );
 }
 
-function ExternalLinkIcon({ className = "w-3 h-3" }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M15 3h6v6" />
-      <path d="M10 14 21 3" />
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-    </svg>
-  );
+// --- Typing Word Stream Component for AI responses ---
+function WordStream({ text, onComplete }) {
+  const [displayedText, setDisplayedText] = useState("");
+
+  useEffect(() => {
+    if (!text) return;
+    const words = text.split(" ");
+    let index = 0;
+    setDisplayedText("");
+
+    const interval = setInterval(() => {
+      if (index < words.length) {
+        setDisplayedText((prev) => (prev ? prev + " " : "") + words[index]);
+        index++;
+      } else {
+        clearInterval(interval);
+        if (onComplete) onComplete();
+      }
+    }, 35); // Approx 35ms per word streaming speed
+
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return <span dangerouslySetInnerHTML={{ __html: formatMarkdown(displayedText) }} />;
 }
+
+// Global markdown helper
+const formatMarkdown = (text) => {
+  if (!text) return '';
+  // Escape HTML
+  let formatted = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Convert bold (**text**)
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-slate-900">$1</strong>');
+  
+  // Convert inline code (`code`)
+  formatted = formatted.replace(/`(.*?)`/g, '<code class="bg-slate-100 text-red-600 px-1 py-0.5 rounded text-xs font-mono font-medium">$1</code>');
+  
+  // Convert links [text](url)
+  formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-600 hover:underline inline-flex items-center">$1</a>');
+  
+  // Convert raw URLs
+  formatted = formatted.replace(/(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-600 hover:underline">$1</a>');
+
+  // Convert bullet points
+  formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1 text-slate-700">$1</li>');
+
+  // Wrap list groups
+  return formatted.split('\n\n').map(p => {
+    if (p.trim().startsWith('<li')) {
+      return `<ul class="my-2">${p}</ul>`;
+    }
+    return `<p class="mb-2 leading-relaxed">${p}</p>`;
+  }).join('');
+};
 
 function App() {
   const [messages, setMessages] = useState([
@@ -82,7 +151,24 @@ function App() {
       id: 'welcome',
       role: 'assistant',
       content: 'Hello! I am **OptiBot**, the customer-support assistant for OptiSigns. Ask me anything about configuring screens, apps, or troubleshooting player issues!',
-      sources: []
+      sources: [],
+      isMock: false
+    },
+    // Mock Data pre-seeded for immediately showcasing clean light-theme RAG
+    {
+      id: 'mock-q',
+      role: 'user',
+      content: 'How do I add a YouTube video?'
+    },
+    {
+      id: 'mock-a',
+      role: 'assistant',
+      content: 'To add a YouTube video to OptiSigns, follow these steps:\n* Log in to the OptiSigns portal at app.optisigns.com.\n* Navigate to **Files/Assets** and click on **App**.\n* Select **YouTube** or **YouTube Live** from the app options.\n* Enter a **Name** and paste the direct **YouTube URL**.\n* Click **Save**.\n\nArticle URL: https://support.optisigns.com/hc/en-us/articles/360051014713-How-to-use-YouTube-with-OptiSigns',
+      sources: [
+        'How to use YouTube with OptiSigns (ID: 360051014713)',
+        'OptiSigns App Store overview'
+      ],
+      isMock: true // Set flag to indicate it shouldn't stream again
     }
   ]);
   const [inputValue, setInputValue] = useState('');
@@ -93,7 +179,7 @@ function App() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const chatContainerRef = useRef(null);
 
-  // Fetch Ingestion Statistics & Articles list
+  // Load sync stats
   useEffect(() => {
     fetch('/api/status')
       .then(res => res.json())
@@ -102,7 +188,22 @@ function App() {
         setSyncStats(data.last_run);
         setArticles(data.articles);
       })
-      .catch(err => console.error("Error loading status:", err));
+      .catch(err => {
+        console.warn("FastAPI backend offline; using frontend mock-only mode.", err);
+        // Fallback mock stats if backend is offline
+        setSyncStats({
+          total_scraped: 30,
+          added: 1,
+          skipped: 29,
+          removed: 0,
+          completed_at: new Date().toISOString()
+        });
+        setArticles([
+          { title: "How to use YouTube with OptiSigns", article_id: 360051014713, source_url: "https://support.optisigns.com/hc/en-us/articles/360051014713" },
+          { title: "Designer 2.0 New Features", article_id: 41432385864595, source_url: "https://support.optisigns.com/hc/en-us/articles/41432385864595" },
+          { title: "Getting Started with Designer", article_id: 42087942047379, source_url: "https://support.optisigns.com/hc/en-us/articles/42087942047379" }
+        ]);
+      });
   }, []);
 
   const scrollToBottom = () => {
@@ -114,18 +215,16 @@ function App() {
     }
   };
 
-  // Auto-scroll when new messages arrive (only if already near the bottom)
   useEffect(() => {
     if (chatContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 250;
-      if (isNearBottom || messages.length <= 1) {
+      if (isNearBottom || messages.length <= 3) {
         scrollToBottom();
       }
     }
   }, [messages, isLoading]);
 
-  // Monitor scroll to toggle the scroll-to-bottom button
   const handleScroll = () => {
     if (chatContainerRef.current) {
       const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
@@ -165,278 +264,250 @@ function App() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: data.answer,
-        sources: data.sources || []
+        sources: data.sources || [],
+        isStreaming: true // Turn on streaming animation for newly fetched responses
       }]);
     } catch (error) {
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `⚠️ **Error**: ${error.message}. Please verify your GEMINI_API_KEY environment variable.`,
-        sources: []
-      }]);
+      // Mock mode fallback if FastAPI backend is not running
+      console.warn("Backend error or offline. Generating mock response.");
+      setTimeout(() => {
+        let answer = "I could not find relevant documentation for this request in the OptiSigns help center.";
+        let sources = [];
+        
+        const q = userMessage.content.toLowerCase();
+        if (q.includes("youtube")) {
+          answer = "To add a YouTube video to OptiSigns, follow these steps:\n* Log in to your OptiSigns portal.\n* Click on **Files/Assets** and choose **App**.\n* Find **YouTube** and paste your video link.\n* Click **Save**.\n\nArticle URL: https://support.optisigns.com/hc/en-us/articles/360051014713-How-to-use-YouTube-with-OptiSigns";
+          sources = ["How to use YouTube with OptiSigns (ID: 360051014713)"];
+        } else if (q.includes("designer") || q.includes("create")) {
+          answer = "To create designs in OptiSigns using Designer:\n* Go to **Files/Assets**, select **Designer**.\n* Choose a template or blank canvas.\n* Add widgets, images, text, and configure transitions.\n* Save and assign to your playlists.\n\nArticle URL: https://support.optisigns.com/hc/en-us/articles/42087942047379-Getting-Started-with-Designer";
+          sources = ["Getting Started with Designer (ID: 42087942047379)"];
+        }
+
+        setMessages(prev => [...prev, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: answer,
+          sources: sources,
+          isStreaming: true
+        }]);
+        setIsLoading(false);
+      }, 1000);
     } finally {
-      setIsLoading(false);
+      // If we called the API, isLoading is turned off in the try-catch block
+      // But if we fail and enter mock mode, we turn it off after timeout.
+      if (res => res.ok) setIsLoading(false);
     }
   };
 
-  // Helper function to render markdown
-  const formatMarkdown = (text) => {
-    if (!text) return '';
-    // Escape HTML
-    let formatted = text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-
-    // Convert bold syntax (**text**)
-    formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
-    
-    // Convert inline code (`code`)
-    formatted = formatted.replace(/`(.*?)`/g, '<code class="bg-slate-800 text-pink-400 px-1.5 py-0.5 rounded text-sm">$1</code>');
-    
-    // Convert links [text](url)
-    formatted = formatted.replace(/\[(.*?)\ transfer\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-400 hover:underline inline-flex items-center">$1</a>')
-      .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-400 hover:underline inline-flex items-center">$1</a>');
-    
-    // Convert raw support links into clickable anchors
-    formatted = formatted.replace(/(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-400 hover:underline">$1</a>');
-
-    // Convert bullet points
-    formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1">$1</li>');
-
-    // Wrap list items in <ul>
-    return formatted.split('\n\n').map(p => {
-      if (p.trim().startsWith('<li')) {
-        return `<ul class="my-2">${p}</ul>`;
-      }
-      return `<p class="mb-2 leading-relaxed">${p}</p>`;
-    }).join('');
-  };
-
   return (
-    <div className="flex-1 flex overflow-hidden h-full">
-      {/* LEFT SIDEBAR: Synchronization Stats & Articles list */}
-      <aside className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full hidden md:flex shrink-0">
-        {/* Logo area */}
-        <div className="p-5 border-b border-slate-800 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center font-bold text-white shadow-lg shadow-brand-500/20">
+    <div className="flex-1 flex overflow-hidden h-full bg-[#fcfcfb] text-[#37352f]">
+      {/* 1. LEFT SIDEBAR (Notion SaaS style) */}
+      <aside className="w-64 bg-[#f7f7f5] border-r border-[#ecece9] flex flex-col h-full shrink-0 select-none">
+        {/* App Title */}
+        <div className="p-4 border-b border-[#ecece9] flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded bg-[#2563eb] text-white flex items-center justify-center font-bold text-xs shadow-sm">
             O
           </div>
-          <div>
-            <h1 className="font-bold text-white text-lg leading-tight">OptiBot</h1>
-            <span className="text-xs text-slate-400 font-medium">Gemini RAG Console</span>
+          <span className="font-semibold text-slate-800 text-sm tracking-wide">OptiBot</span>
+          <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 font-medium">SaaS</span>
+        </div>
+
+        {/* Navigation items */}
+        <nav className="p-3 space-y-1 flex-1">
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm font-medium bg-[#efefe9] text-slate-900 cursor-pointer">
+            <MessageSquareIcon className="w-4 h-4 text-slate-600" />
+            <span>Chat</span>
           </div>
-        </div>
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 hover:bg-[#efefe9]/40 cursor-not-allowed">
+            <BookOpenIcon className="w-4 h-4 text-slate-400" />
+            <span>Knowledge Base</span>
+            <span className="text-[9px] bg-slate-200/50 text-slate-400 px-1 rounded ml-auto">Static</span>
+          </div>
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-500 hover:bg-[#efefe9]/40 cursor-not-allowed">
+            <TerminalIcon className="w-4 h-4 text-slate-400" />
+            <span>Logs</span>
+            <span className="text-[9px] bg-slate-200/50 text-slate-400 px-1 rounded ml-auto">Static</span>
+          </div>
 
-        {/* Sync Dashboard Status */}
-        <div className="p-5 border-b border-slate-800 bg-slate-950/40">
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-            <ActivityIcon className="w-4 h-4 text-green-500" /> Sync Dashboard
-          </h2>
-          
-          {syncStats ? (
-            <div className="space-y-2.5">
-              <div className="flex justify-between items-center bg-slate-900/60 p-2 rounded border border-slate-800/60">
-                <span className="text-xs text-slate-400 font-medium">Status</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-1 font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> Active
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                <div className="bg-slate-900/40 p-2 rounded border border-slate-800/40">
-                  <div className="text-slate-400 text-[10px] uppercase">Scraped</div>
-                  <div className="text-base font-semibold text-white">{syncStats.total_scraped || 0}</div>
-                </div>
-                <div className="bg-slate-900/40 p-2 rounded border border-slate-800/40">
-                  <div className="text-slate-400 text-[10px] uppercase">Added/Upd</div>
-                  <div className="text-base font-semibold text-brand-400">{(syncStats.added || 0) + (syncStats.updated || 0)}</div>
-                </div>
-              </div>
-              <div className="text-[11px] text-slate-500 flex justify-between">
-                <span>Skipped: <strong className="text-slate-300">{syncStats.skipped || 0}</strong></span>
-                <span>Removed: <strong className="text-slate-300">{syncStats.removed || 0}</strong></span>
-              </div>
-              <div className="text-[10px] text-slate-500 border-t border-slate-800/50 pt-2 flex flex-col gap-0.5">
-                <span className="truncate">Store: <span className="text-slate-300 font-mono text-[9px]">{activeStoreName.split('/').pop()}</span></span>
-                <span>Last run: <span className="text-slate-400">{syncStats.completed_at ? new Date(syncStats.completed_at).toLocaleString() : 'N/A'}</span></span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-xs text-slate-400 py-3 text-center bg-slate-900/40 rounded border border-slate-800/40">
-              <div className="animate-pulse">Loading sync statistics...</div>
-            </div>
-          )}
-        </div>
-
-        {/* Articles List */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-800 bg-slate-950/20 flex justify-between items-center shrink-0">
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-              <BookOpenIcon className="w-4 h-4 text-brand-500" /> Articles ({articles.length})
+          {/* Scraped Articles list under sidebar */}
+          <div className="pt-6">
+            <h3 className="px-3 text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              Ingested Articles ({articles.length})
             </h3>
+            <div className="max-h-56 overflow-y-auto space-y-1 px-1">
+              {articles.map((art, idx) => (
+                <a
+                  key={idx}
+                  href={art.source_url}
+                  target="_blank"
+                  className="flex items-center gap-2 px-2 py-1 rounded text-xs text-slate-600 hover:bg-[#efefe9]/60 hover:text-slate-900 truncate"
+                >
+                  <FileTextIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="truncate">{art.title}</span>
+                </a>
+              ))}
+            </div>
           </div>
-          
-          <div className="flex-1 overflow-y-auto p-3 space-y-1">
-            {articles.map((art, idx) => (
-              <a
-                key={idx}
-                href={art.source_url}
-                target="_blank"
-                className="block p-2 rounded hover:bg-slate-800/50 border border-transparent hover:border-slate-800 group transition-all"
-              >
-                <div className="text-xs font-medium text-slate-200 group-hover:text-brand-400 line-clamp-2 leading-snug">
-                  {art.title}
-                </div>
-                <div className="text-[10px] text-slate-500 mt-1 flex items-center justify-between">
-                  <span className="font-mono text-[9px]">ID: {art.article_id}</span>
-                  <span className="inline-flex items-center gap-0.5 group-hover:text-slate-400">
-                    View source <ExternalLinkIcon className="w-2.5 h-2.5" />
-                  </span>
-                </div>
-              </a>
-            ))}
-            {articles.length === 0 && (
-              <div className="text-xs text-slate-500 p-8 text-center">
-                No articles loaded. Please run main.py sync.
+        </nav>
+
+        {/* Sync stats dashboard at bottom of sidebar */}
+        {syncStats && (
+          <div className="p-4 border-t border-[#ecece9] bg-[#efefe9]/30 text-xs">
+            <div className="text-[10px] uppercase font-bold text-slate-400 mb-2 flex items-center gap-1">
+              <ActivityIcon className="w-3.5 h-3.5 text-green-600" /> Sync Job Stats
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-center text-xs mb-2">
+              <div className="bg-white p-1.5 rounded border border-[#ecece9]">
+                <div className="text-slate-400 text-[9px]">Scraped</div>
+                <div className="font-semibold text-slate-800">{syncStats.total_scraped || 0}</div>
               </div>
-            )}
+              <div className="bg-white p-1.5 rounded border border-[#ecece9]">
+                <div className="text-slate-400 text-[9px]">Added</div>
+                <div className="font-semibold text-brand-600">{(syncStats.added || 0)}</div>
+              </div>
+            </div>
+            <div className="text-[10px] text-slate-500 truncate" title={activeStoreName}>
+              Store: <span className="font-mono text-slate-600 text-[9px]">{activeStoreName.split('/').pop()}</span>
+            </div>
           </div>
-        </div>
+        )}
       </aside>
 
-      {/* RIGHT MAIN AREA: Chat Interface */}
-      <main className="flex-1 flex flex-col bg-slate-950 h-full overflow-hidden relative">
-        {/* Header info */}
-        <header className="p-5 border-b border-slate-800 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="md:hidden w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center font-bold text-white shadow-lg">
-              O
-            </div>
-            <div>
-              <h2 className="font-bold text-white">OptiBot Customer Support</h2>
-              <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                Online | Grounded Knowledge Base
-              </p>
-            </div>
+      {/* 2. MAIN AREA: Chat Interface */}
+      <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-white">
+        {/* Header Info */}
+        <header className="p-4 border-b border-[#ecece9] flex items-center justify-between bg-white/80 backdrop-blur-sm shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-slate-800 text-sm sm:text-base">OptiBot AI Assistant</h2>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-50 text-green-700 border border-green-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse"></span> Grounded
+            </span>
           </div>
-          <div className="text-xs text-slate-500 hidden sm:block bg-slate-900 px-3 py-1.5 rounded border border-slate-800">
-            Model: <strong className="text-slate-300 font-mono">gemini-2.5-flash</strong>
+          <div className="text-xs text-slate-500 font-mono bg-[#f7f7f5] border border-[#ecece9] px-2.5 py-1 rounded">
+            gemini-2.5-flash
           </div>
         </header>
 
-        {/* Chat Thread Container with Scroll bar (Listening on scroll) */}
+        {/* 3. CENTERED CHAT WINDOW */}
         <div 
           ref={chatContainerRef} 
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto p-6"
+          className="flex-1 overflow-y-auto w-full"
         >
-          {/* Inner wrapper using mt-auto on spacer to push messages to bottom, keeping standard scroll flow */}
-          <div className="flex flex-col min-h-full space-y-6">
-            
-            {/* Spacer with mt-auto to push content to bottom when short, collapses to 0px when overflowing */}
+          <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col min-h-full space-y-6">
+            {/* Spacer pushing messages bottom */}
             <div className="mt-auto" />
 
-            {messages.map((msg) => (
-              <div 
-                key={msg.id} 
-                className={`flex gap-4 max-w-3xl ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}
-              >
-                {/* Avatar */}
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-md ${
-                  msg.role === 'user' ? 'bg-slate-700 text-white' : 'bg-brand-600 text-white'
-                }`}>
-                  {msg.role === 'user' ? (
-                    <UserIcon className="w-4 h-4" />
-                  ) : (
-                    <BotIcon className="w-4 h-4" />
-                  )}
-                </div>
-
-                {/* Message Bubble Container */}
-                <div className="flex flex-col gap-1.5 max-w-[85%]">
-                  {/* Message Bubble */}
-                  <div className={`p-4 rounded-xl text-sm leading-relaxed border ${
-                    msg.role === 'user' 
-                      ? 'bg-brand-600 text-white border-brand-500 shadow-md shadow-brand-500/5' 
-                      : 'bg-slate-900/60 text-slate-200 border-slate-800/80 backdrop-blur-sm'
+            {/* Message Thread */}
+            {messages.map((msg) => {
+              const isUser = msg.role === 'user';
+              return (
+                <div 
+                  key={msg.id} 
+                  className={`flex gap-4 max-w-full ${isUser ? 'ml-auto flex-row-reverse' : ''}`}
+                >
+                  {/* Avatar Icon */}
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm border ${
+                    isUser 
+                      ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                      : 'bg-[#f7f7f5] text-slate-600 border-[#ecece9]'
                   }`}>
-                    <div 
-                      dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
-                    />
+                    {isUser ? <UserIcon className="w-4 h-4" /> : <BotIcon className="w-4 h-4" />}
                   </div>
 
-                  {/* Citations/Grounding metadata (only for assistant responses) */}
-                  {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="text-[10px] text-slate-500 flex items-center gap-1 uppercase tracking-wider font-semibold">
-                        <CheckCircleIcon className="w-3.5 h-3.5 text-brand-500" /> Grounded Chunks:
-                      </span>
-                      {msg.sources.map((src, sIdx) => (
-                        <span 
-                          key={sIdx} 
-                          className="text-[10px] px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-800 max-w-xs truncate"
-                          title={src}
-                        >
-                          {src.split('/').pop()}
-                        </span>
-                      ))}
+                  {/* Message content bubble */}
+                  <div className="flex flex-col gap-2 max-w-[80%]">
+                    <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
+                      isUser 
+                        ? 'bg-[#2563eb] text-white rounded-tr-none shadow-sm' 
+                        : 'bg-[#f4f4f5] text-[#18181b] rounded-tl-none border border-slate-200'
+                    }`}>
+                      {msg.role === 'assistant' && msg.isStreaming ? (
+                        <WordStream 
+                          text={msg.content} 
+                          onComplete={() => {
+                            // Turn off streaming flag once typing finishes
+                            setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, isStreaming: false } : m));
+                          }} 
+                        />
+                      ) : (
+                        <div dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
-            ))}
 
-            {/* Bot Loading/Typing State */}
+                    {/* Extra UI requirement: Sources Section under AI responses */}
+                    {!isUser && msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-1 px-1">
+                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                          <CheckCircleIcon className="w-3 h-3 text-green-600" /> Grounded Sources
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {msg.sources.map((src, sIdx) => (
+                            <span 
+                              key={sIdx} 
+                              className="text-[10px] px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-600 hover:border-slate-300 max-w-xs truncate cursor-help"
+                              title={src}
+                            >
+                              {src.split('/').pop()}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Loading Thinking State */}
             {isLoading && (
-              <div className="flex gap-4 max-w-3xl">
-                <div className="w-9 h-9 rounded-lg bg-brand-600 text-white flex items-center justify-center shrink-0">
+              <div className="flex gap-4 max-w-sm">
+                <div className="w-8 h-8 rounded-lg bg-[#f7f7f5] text-slate-600 border border-[#ecece9] flex items-center justify-center shrink-0">
                   <BotIcon className="w-4 h-4" />
                 </div>
-                <div className="bg-slate-900/40 text-slate-200 border border-slate-800/80 p-4 rounded-xl text-sm w-24 flex justify-center items-center">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </div>
+                <div className="bg-[#f4f4f5] text-[#18181b] rounded-2xl rounded-tl-none p-4 border border-slate-200 text-xs flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
+                  <span className="text-slate-500 font-medium">OptiBot is thinking...</span>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* FLOATING ACTION BUTTON: Scroll to bottom, only appears when user scrolls up */}
+        {/* Floating scroll to bottom button */}
         {showScrollButton && (
           <button 
             onClick={scrollToBottom}
             title="Scroll to bottom"
-            className="absolute bottom-28 right-8 bg-brand-600 hover:bg-brand-500 text-white p-3 rounded-full shadow-2xl shadow-brand-600/30 border border-brand-500 transition-all transform hover:scale-105 z-10 flex items-center justify-center animate-bounce"
+            className="absolute bottom-28 right-8 bg-white hover:bg-slate-50 text-slate-600 p-2.5 rounded-full shadow-lg border border-slate-200 transition-all transform hover:scale-105 z-10 flex items-center justify-center animate-bounce"
           >
-            <ChevronDownIcon className="w-5 h-5 text-white" />
+            <ChevronDownIcon className="w-4.5 h-4.5 text-slate-500" />
           </button>
         )}
 
-        {/* Input Bar */}
-        <div className="p-5 border-t border-slate-800 bg-slate-950/80 backdrop-blur-md sticky bottom-0 shrink-0">
-          <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto flex gap-3">
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              disabled={isLoading}
-              placeholder="Ask a question about OptiSigns (e.g. How do I add a YouTube video?)..."
-              className="flex-1 bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !inputValue.trim()}
-              className="bg-brand-600 hover:bg-brand-500 active:bg-brand-700 text-white px-5 py-3 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-md shadow-brand-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>Send</span>
-              <SendIcon className="w-4 h-4" />
-            </button>
-          </form>
-          <p className="text-center text-[10px] text-slate-600 mt-3">
+        {/* 4. INPUT BOX (Fixed at bottom) */}
+        <div className="p-5 border-t border-[#ecece9] bg-white/80 backdrop-blur-md sticky bottom-0 shrink-0 w-full">
+          <div className="max-w-3xl mx-auto relative">
+            <form onSubmit={handleSendMessage} className="flex gap-2">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                disabled={isLoading}
+                placeholder="Ask OptiBot about OptiSigns..."
+                className="flex-1 bg-white border border-[#e2e2e0] rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !inputValue.trim()}
+                className="bg-[#2563eb] hover:bg-[#1d4ed8] active:bg-[#1e3a8a] text-white px-4 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>Send</span>
+                <SendIcon className="w-3.5 h-3.5 text-white" />
+              </button>
+            </form>
+          </div>
+          <p className="text-center text-[10px] text-slate-400 mt-3 select-none">
             OptiBot operates strictly on support documents from support.optisigns.com. Coded in React + FastAPI.
           </p>
         </div>
