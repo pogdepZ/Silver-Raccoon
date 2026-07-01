@@ -227,8 +227,14 @@ const formatMarkdown = (text) => {
   // Convert code blocks (```code```)
   formatted = formatted.replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-900 text-slate-200 p-3 rounded-lg border border-[#3d3d3d] text-xs font-mono overflow-x-auto my-2 leading-relaxed">$1</pre>');
 
-  // Convert bold (**text**)
-  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
+  // Convert ### Headings (Cyan/Blue Subheadings)
+  formatted = formatted.replace(/^### (.*)$/gm, '<h4 class="text-xs font-bold text-blue-400 mt-4 mb-2 uppercase tracking-wider flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>$1</h4>');
+
+  // Convert ## Headings
+  formatted = formatted.replace(/^## (.*)$/gm, '<h3 class="text-sm font-bold text-sky-400 mt-5 mb-2.5 border-b border-[#2d2d2d] pb-1.5 uppercase tracking-wide">$1</h3>');
+
+  // Convert bold (**text**) to styled high-contrast colored badges for premium key highlights
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong class="text-sky-300 font-semibold bg-sky-950/40 px-1.5 py-0.5 rounded-md border border-sky-800/30 font-sans mx-0.5">$1</strong>');
   
   // Convert inline code (`code`)
   formatted = formatted.replace(/`(.*?)`/g, '<code class="bg-[#191919] text-pink-400 px-1 py-0.5 rounded text-xs font-mono font-medium">$1</code>');
@@ -239,13 +245,21 @@ const formatMarkdown = (text) => {
   // Convert raw URLs (ignore if inside href="..." or markdown link parentheses)
   formatted = formatted.replace(/(?<!href=")(?<!\()(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-400 hover:underline">$1</a>');
 
+  // Convert ordered lists (e.g. 1. Log in)
+  formatted = formatted.replace(/^\d+\.\s+(.*)$/gm, '<li class="ml-4 list-decimal mb-1 text-slate-300">$1</li>');
+
   // Convert bullet points
   formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1 text-slate-300">$1</li>');
 
   // Wrap list groups
   return formatted.split('\n\n').map(p => {
     if (p.trim().startsWith('<li')) {
-      return `<ul class="my-2">${p}</ul>`;
+      const isDecimal = p.includes('list-decimal');
+      if (isDecimal) {
+        return `<ol class="list-decimal pl-4 space-y-1 my-2">${p}</ol>`;
+      } else {
+        return `<ul class="list-disc pl-4 space-y-1 my-2">${p}</ul>`;
+      }
     }
     return `<p class="mb-2 leading-relaxed">${p}</p>`;
   }).join('');
