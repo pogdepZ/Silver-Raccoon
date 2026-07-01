@@ -12,7 +12,7 @@ import re
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from src.query_router import handle_query, classify_question
+from src.query_router import handle_query, classify_question, PRODUCT_SUPPORT_SYSTEM_PROMPT
 from src.ai_sync import AssistantManager
 
 load_dotenv()
@@ -437,10 +437,24 @@ def rag_explore_endpoint(request: ExploreRequest):
     is_deactivated_used = False
     
     if category == "PRODUCT_SUPPORT":
+        # Build custom prompt with exclusions if needed
+        custom_prompt = PRODUCT_SUPPORT_SYSTEM_PROMPT
+        if inactive_slugs:
+            exclusions = []
+            for slug in inactive_slugs:
+                exclusions.append(f'- Slug: "{slug}"')
+            custom_prompt += (
+                f"\n\nCRITICAL RULE: The following support articles are currently DEACTIVATED: \n"
+                f"{chr(10).join(exclusions)}\n"
+                f"You MUST NOT use any information from these documents to answer queries. "
+                f"If the query is related to them, reply that the document is currently deactivated."
+            )
+
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite",
             contents=request.query,
             config=types.GenerateContentConfig(
+                system_instruction=custom_prompt,
                 tools=[
                     types.Tool(
                         file_search=types.FileSearch(
