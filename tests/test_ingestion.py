@@ -184,3 +184,57 @@ class TestIngestionEndpoints(unittest.TestCase):
         response = self.client.get("/api/articles/invalid..slug/path")
         self.assertEqual(response.status_code, 400)
         self.assertIn("Invalid article identifier", response.json()["detail"])
+
+    @patch("src.web_app.classify_question")
+    @patch("src.web_app.genai.Client")
+    def test_rag_explore_product_support(self, mock_client_class, mock_classify):
+        mock_classify.return_value = "PRODUCT_SUPPORT"
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "This is a grounded answer."
+        
+        mock_chunk = MagicMock()
+        mock_chunk.retrieved_context.text = "This is matched support text content."
+        mock_chunk.retrieved_context.title = "zoom-guide.md"
+        mock_chunk.retrieved_context.custom_metadata = [
+            MagicMock(key="slug", string_value="zoom-guide")
+        ]
+        
+        mock_response.candidates = [
+            MagicMock(grounding_metadata=MagicMock(grounding_chunks=[mock_chunk]))
+        ]
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
+        
+        payload = {"query": "How do I configure Zoom?"}
+        response = self.client.post("/api/rag/explore", json=payload)
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["classification"], "PRODUCT_SUPPORT")
+        self.assertEqual(data["answer"], "This is a grounded answer.")
+        self.assertEqual(len(data["chunks"]), 1)
+        self.assertEqual(data["chunks"][0]["title"], "zoom-guide.md")
+        self.assertEqual(data["chunks"][0]["slug"], "zoom-guide")
+        self.assertTrue(data["chunks"][0]["similarity_score"] > 0.5)
+
+    @patch("src.web_app.classify_question")
+    @patch("src.web_app.genai.Client")
+    def test_rag_explore_general(self, mock_client_class, mock_classify):
+        mock_classify.return_value = "GENERAL_KNOWLEDGE"
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "General reply."
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_class.return_value = mock_client
+        
+        payload = {"query": "Who are you?"}
+        response = self.client.post("/api/rag/explore", json=payload)
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["classification"], "GENERAL_KNOWLEDGE")
+        self.assertEqual(data["answer"], "General reply.")
+        self.assertEqual(len(data["chunks"]), 0)

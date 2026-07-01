@@ -244,6 +244,33 @@ function App() {
     }
   };
 
+  // --- RAG EXPLORER STATES ---
+  const [explorerQuery, setExplorerQuery] = useState('');
+  const [explorerLoading, setExplorerLoading] = useState(false);
+  const [explorerResults, setExplorerResults] = useState(null);
+
+  const handleExplorerSubmit = async (e) => {
+    e.preventDefault();
+    if (!explorerQuery.trim() || explorerLoading) return;
+    setExplorerLoading(true);
+    setExplorerResults(null);
+    try {
+      const res = await fetch('/api/rag/explore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: explorerQuery.trim() })
+      });
+      if (!res.ok) throw new Error('Failed to query RAG explorer');
+      const data = await res.json();
+      setExplorerResults(data);
+    } catch (error) {
+      console.error("Error exploring RAG:", error);
+      showToastNotification('Failed to query RAG Playground', 'error');
+    } finally {
+      setExplorerLoading(false);
+    }
+  };
+
   // --- KNOWLEDGE BASE VIEW STATES ---
   const [activeKbTab, setActiveKbTab] = useState('file'); // 'file', 'url', 'manual'
   const [selectedFile, setSelectedFile] = useState(null);
@@ -650,6 +677,17 @@ function App() {
             >
               <BookOpenIcon className="w-4 h-4" />
               <span>Knowledge Base</span>
+            </div>
+            <div 
+              onClick={() => setActiveView('explorer')}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
+                activeView === 'explorer' 
+                  ? 'bg-[#2d2d2d] text-white' 
+                  : 'text-slate-400 hover:bg-[#2d2d2d]/50 hover:text-white'
+              }`}
+            >
+              <ActivityIcon className="w-4 h-4 text-blue-400" />
+              <span>RAG Playground</span>
             </div>
             <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-500 hover:bg-[#2d2d2d]/40 cursor-not-allowed">
               <TerminalIcon className="w-4 h-4" />
@@ -1114,6 +1152,148 @@ function App() {
                 ))}
               </div>
             </div>
+
+          </div>
+        </main>
+      )}
+
+      {/* 4. RAG PLAYGROUND / EXPLORER VIEW (Only shown when activeView === 'explorer') */}
+      {activeView === 'explorer' && (
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
+          {/* Header */}
+          <header className="p-4 border-b border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-sm shrink-0 flex flex-col justify-center">
+            <h2 className="font-semibold text-white text-base sm:text-lg">RAG Playground</h2>
+            <p className="text-xs text-slate-400">Inspect the inner workings of semantic vector retrieval and AI synthesis</p>
+          </header>
+
+          {/* Explorer Layout */}
+          <div className="flex-1 flex flex-col overflow-y-auto w-full p-6 space-y-6">
+            
+            {/* Input search box card */}
+            <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-5 shadow-md shrink-0">
+              <form onSubmit={handleExplorerSubmit} className="flex gap-3">
+                <input 
+                  type="text" 
+                  value={explorerQuery}
+                  onChange={(e) => setExplorerQuery(e.target.value)}
+                  disabled={explorerLoading}
+                  placeholder="Enter a test support query (e.g. 'How do I add a YouTube video?')"
+                  required
+                  className="flex-1 bg-[#191919] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="submit"
+                  disabled={explorerLoading || !explorerQuery.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 text-white font-semibold text-sm px-6 rounded-xl shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {explorerLoading ? (
+                    <>
+                      <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      <span>Retrieving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <SendIcon className="w-3.5 h-3.5" />
+                      <span>Inspect Query</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* Results Viewer */}
+            {explorerLoading && (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 space-y-3">
+                <div className="w-10 h-10 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
+                <span className="text-sm text-slate-400 font-medium animate-pulse">Running semantic search & classification...</span>
+              </div>
+            )}
+
+            {!explorerLoading && explorerResults && (
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                
+                {/* Left Column: Semantic Grounding Data */}
+                <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-5 shadow-md flex flex-col">
+                  <div className="border-b border-[#3d3d3d] pb-3 mb-4 shrink-0 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-white text-sm">Grounded Vector Search</h3>
+                      <p className="text-[11px] text-slate-500">Matching chunks retrieved from Gemini Vector Store</p>
+                    </div>
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold uppercase ${
+                      explorerResults.classification === 'PRODUCT_SUPPORT' 
+                        ? 'bg-green-900/40 text-green-400 border border-green-700/30' 
+                        : 'bg-blue-900/40 text-blue-400 border border-blue-700/30'
+                    }`}>
+                      Intent: {explorerResults.classification}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                    {explorerResults.chunks && explorerResults.chunks.length > 0 ? (
+                      explorerResults.chunks.map((chunk, cIdx) => (
+                        <div key={cIdx} className="bg-[#191919] p-4 rounded-xl border border-[#3d3d3d] space-y-3">
+                          <div className="flex items-center justify-between text-xs border-b border-[#2d2d2d] pb-2">
+                            <button
+                              onClick={() => openArticleInDrawer(chunk.slug)}
+                              className="text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                            >
+                              <BookOpenIcon className="w-3.5 h-3.5 text-blue-400" />
+                              <span>{chunk.title}</span>
+                            </button>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500 font-mono">Relevance Score</span>
+                              <span className="text-[11px] text-green-400 font-bold font-mono">
+                                {(chunk.similarity_score * 100).toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Similarity indicator bar */}
+                          <div className="w-full bg-[#2d2d2d] h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-green-500 h-full transition-all duration-500" 
+                              style={{ width: `${chunk.similarity_score * 100}%` }}
+                            />
+                          </div>
+
+                          <div className="text-xs text-slate-400 leading-relaxed font-mono whitespace-pre-wrap select-text max-h-48 overflow-y-auto bg-black/20 p-2.5 rounded border border-[#2d2d2d]">
+                            {chunk.text}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center py-12 text-center text-slate-500 text-xs">
+                        <CheckCircleIcon className="w-8 h-8 text-slate-600 mb-2" />
+                        <span>No grounding files retrieved. Intent classified as General Knowledge.</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column: Grounded AI Output */}
+                <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-5 shadow-md flex flex-col">
+                  <div className="border-b border-[#3d3d3d] pb-3 mb-4 shrink-0">
+                    <h3 className="font-semibold text-white text-sm">Grounded Response Output</h3>
+                    <p className="text-[11px] text-slate-500">Synthesized support response based strictly on grounding data</p>
+                  </div>
+                  
+                  <div className="flex-1 bg-[#191919] p-4 rounded-xl border border-[#3d3d3d] overflow-y-auto text-xs text-slate-300 leading-relaxed select-text font-sans">
+                    <div dangerouslySetInnerHTML={{ __html: formatMarkdown(explorerResults.answer) }} />
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {!explorerLoading && !explorerResults && (
+              <div className="flex-1 flex flex-col items-center justify-center text-center py-20 bg-[#2d2d2d]/30 border border-dashed border-[#3d3d3d] rounded-2xl">
+                <ActivityIcon className="w-10 h-10 text-slate-600 mb-3 animate-pulse" />
+                <h3 className="text-sm font-semibold text-white mb-1">RAG Diagnostics Playground</h3>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Enter any customer support query in the input box above to inspect the classified intent, relevance score weights, retrieved text chunks, and synthesized output.
+                </p>
+              </div>
+            )}
 
           </div>
         </main>

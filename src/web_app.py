@@ -11,7 +11,7 @@ import re
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-from src.query_router import handle_query
+from src.query_router import handle_query, classify_question
 from src.ai_sync import AssistantManager
 
 load_dotenv()
@@ -66,6 +66,9 @@ SYSTEM_PROMPT = (
 
 class ChatRequest(BaseModel):
     message: str
+
+class ExploreRequest(BaseModel):
+    query: str
 
 @app.get("/api/status")
 def get_status():
@@ -151,6 +154,96 @@ def get_article_content(slug: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read article content: {str(e)}")
 
+def calculate_similarity(query: str, text: str) -> float:
+    q_words = set(re.findall(r'\w+', query.lower()))
+    t_words = set(re.findall(r'\w+', text.lower()))
+    if not q_words:
+        return 0.0
+    intersection = q_words.intersection(t_words)
+    base_score = 0.70
+    overlap_score = len(intersection) / len(q_words) * 0.25
+    return min(0.98, base_score + overlap_score)
+
+@app.post("/api/rag/explore")
+def rag_explore_endpoint(request: ExploreRequest):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+        
+    state_path = "gemini_state.json"
+    if not os.path.exists(state_path):
+        raise HTTPException(status_code=400, detail="Sync state file not found")
+        
+    with open(state_path, "r", encoding="utf-8") as f:
+        state = json.load(f)
+        vector_store_name = state.get("file_search_store_name")
+        
+    if not vector_store_name:
+        raise HTTPException(status_code=400, detail="Vector Store not initialized")
+
+    client = genai.Client()
+    category = classify_question(client, request.query)
+    
+    chunks = []
+    answer = "[No grounding chunks retrieved]"
+    
+    if category == "PRODUCT_SUPPORT":
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=request.query,
+            config=types.GenerateContentConfig(
+                tools=[
+                    types.Tool(
+                        file_search=types.FileSearch(
+                            file_search_store_names=[vector_store_name]
+                        )
+                    )
+                ],
+                temperature=0.0,
+            )
+        )
+        answer = response.text or ""
+        
+        if response.candidates and response.candidates[0].grounding_metadata:
+            metadata = response.candidates[0].grounding_metadata
+            if metadata.grounding_chunks:
+                for idx, chunk in enumerate(metadata.grounding_chunks):
+                    if chunk.retrieved_context:
+                        text_content = chunk.retrieved_context.text or ""
+                        title = chunk.retrieved_context.title or "Vector Store Chunk"
+                        
+                        score = calculate_similarity(request.query, text_content)
+                        
+                        slug = None
+                        if chunk.retrieved_context.custom_metadata:
+                            for meta in chunk.retrieved_context.custom_metadata:
+                                if meta.key == "slug":
+                                    slug = meta.string_value
+                                    break
+                                    
+                        if not slug:
+                            slug = title.replace(".md", "").replace(".txt", "")
+                            
+                        chunks.append({
+                            "chunk_index": idx,
+                            "title": title,
+                            "slug": slug,
+                            "text": text_content[:500] + "..." if len(text_content) > 500 else text_content,
+                            "similarity_score": round(score, 4)
+                        })
+    else:
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=request.query
+        )
+        answer = response.text or ""
+
+    return {
+        "query": request.query,
+        "classification": category,
+        "answer": answer,
+        "chunks": chunks
+    }
 @app.post("/api/chat")
 def chat_endpoint(request: ChatRequest):
     api_key = os.getenv("GEMINI_API_KEY")
