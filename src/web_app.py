@@ -66,6 +66,7 @@ SYSTEM_PROMPT = (
 
 class ChatRequest(BaseModel):
     message: str
+    rag_active: bool = True
 
 class ExploreRequest(BaseModel):
     query: str
@@ -266,10 +267,26 @@ def chat_endpoint(request: ChatRequest):
         
     try:
         client = genai.Client(api_key=api_key)
+        if not request.rag_active:
+            # Bypass RAG search and intent classification - run as general AI chatbot
+            response = client.models.generate_content(
+                model="gemini-3.1-flash-lite",
+                contents=request.message,
+                config=types.GenerateContentConfig(
+                    system_instruction="You are OptiBot, a customer support assistant. Answer the user's question using your general knowledge.",
+                    temperature=0.7
+                )
+            )
+            return {
+                "answer": response.text or "[No response generated]",
+                "sources": [],
+                "classification": "GENERAL_KNOWLEDGE"
+            }
+            
         result = handle_query(client, request.message, vector_store_name)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to query assistant: {str(e)}")
 
 class ManualIngestRequest(BaseModel):
     title: str

@@ -230,6 +230,7 @@ const formatMarkdown = (text) => {
 function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('chat'); // 'chat' or 'knowledge'
+  const [ragActive, setRagActive] = useState(true);
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -517,7 +518,10 @@ function App() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage.content })
+        body: JSON.stringify({ 
+          message: userMessage.content,
+          rag_active: ragActive
+        })
       });
 
       if (!res.ok) {
@@ -989,27 +993,61 @@ function App() {
       {activeView === 'chat' && (
         <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
           {/* Top Header (fixed) */}
-          <header className="p-4 border-b border-[#2d2d2d] flex items-center justify-between bg-[#202123]/80 backdrop-blur-sm shrink-0">
-            <div className="flex items-center gap-2">
-              <h2 className="font-semibold text-white text-sm sm:text-base">OptiBot AI Assistant</h2>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-950/30 text-green-400 border border-green-800/30">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse"></span> Grounded
+          <header className="p-4 border-b border-[#2d2d2d] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-[#202123]/80 backdrop-blur-sm shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col">
+                <h2 className="font-semibold text-white text-sm sm:text-base">OptiBot AI Assistant</h2>
+                <span className="text-[10px] text-slate-500 font-medium">FastAPI + Gemini 3.1</span>
+              </div>
+              
+              {/* RAG Status Badge */}
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all ${
+                ragActive 
+                  ? 'bg-green-950/30 text-green-400 border-green-800/30' 
+                  : 'bg-slate-900 text-slate-400 border-[#3d3d3d]'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full mr-1 ${ragActive ? 'bg-green-500 animate-pulse' : 'bg-slate-500'}`}></span>
+                {ragActive ? 'RAG Active (Grounded)' : 'RAG Disabled (General AI)'}
               </span>
             </div>
-            <div className="flex items-center gap-3">
-              {messages.length > 1 && (
+            
+            {/* Controls area */}
+            <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+              {/* RAG Active Toggle Switch */}
+              <div className="flex items-center gap-2 bg-slate-900 border border-[#2d2d2d] px-2.5 py-1 rounded-lg select-none">
+                <span className="text-xs text-slate-400 font-medium">RAG Mode</span>
                 <button
                   type="button"
-                  onClick={handleClearChat}
-                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-[#2d2d2d] border border-red-900/40 hover:border-red-500/30 px-2.5 py-1 rounded cursor-pointer transition-all select-none"
-                  title="Clear chat history"
+                  onClick={() => setRagActive(!ragActive)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    ragActive ? 'bg-[#2563eb]' : 'bg-[#3d3d3d]'
+                  }`}
+                  title={ragActive ? "Click to deactivate RAG database retrieval" : "Click to activate RAG database retrieval"}
                 >
-                  <TrashIcon className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                  <span>Clear Chat</span>
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      ragActive ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
-              )}
-              <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
-                gemini-3.1-flash-lite
+              </div>
+
+              {/* Clear Chat & Model Label */}
+              <div className="flex items-center gap-3">
+                {messages.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={handleClearChat}
+                    className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-[#2d2d2d] border border-red-900/40 hover:border-red-500/30 px-2.5 py-1 rounded cursor-pointer transition-all select-none"
+                    title="Clear chat history"
+                  >
+                    <TrashIcon className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                    <span className="hidden sm:inline">Clear Chat</span>
+                  </button>
+                )}
+                <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded hidden sm:block">
+                  gemini-3.1-flash-lite
+                </div>
               </div>
             </div>
           </header>
