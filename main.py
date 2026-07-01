@@ -71,6 +71,7 @@ def main():
                 "title": article.get("title") or article.get("name"),
                 "source_url": article.get("html_url"),
                 "updated_at": article.get("updated_at"),
+                "synced_at": datetime.now(timezone.utc).isoformat(),
             }
             tasks.append((idx, slug, filepath, content_hash, metadata))
         except Exception as e:

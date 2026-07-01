@@ -237,7 +237,13 @@ function App() {
         
         // Dynamically populate Recent Ingestions from actual backend data
         if (data.articles && data.articles.length > 0) {
-          const mappedRecent = data.articles.slice(0, 5).map((art, idx) => {
+          const sortedArticles = [...data.articles].sort((a, b) => {
+            const dateA = new Date(a.synced_at || a.updated_at || 0);
+            const dateB = new Date(b.synced_at || b.updated_at || 0);
+            return dateB - dateA;
+          });
+
+          const mappedRecent = sortedArticles.slice(0, 5).map((art, idx) => {
             let type = 'file';
             let displayName = art.title;
             
@@ -253,11 +259,12 @@ function App() {
               displayName = art.title.replace('url-', '');
             }
             
-            // Calculate a beautiful human-readable relative time
+            // Calculate a beautiful human-readable relative time using synced_at
             let timeStr = 'Recently';
-            if (art.updated_at) {
+            const timestampToUse = art.synced_at || art.updated_at;
+            if (timestampToUse) {
               try {
-                const date = new Date(art.updated_at);
+                const date = new Date(timestampToUse);
                 const diffMs = new Date() - date;
                 const diffMins = Math.floor(diffMs / 60000);
                 if (diffMins < 60) {

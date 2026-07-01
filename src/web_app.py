@@ -94,7 +94,8 @@ def get_status():
                         "title": meta.get("title", slug),
                         "article_id": meta.get("article_id"),
                         "source_url": meta.get("source_url", ""),
-                        "updated_at": meta.get("updated_at", "")
+                        "updated_at": meta.get("updated_at", ""),
+                        "synced_at": meta.get("synced_at", meta.get("updated_at", ""))
                     })
         except Exception:
             pass
@@ -185,6 +186,7 @@ def ingest_manual(request: ManualIngestRequest):
             "title": request.title,
             "source_url": "#",
             "updated_at": updated_at,
+            "synced_at": updated_at,
         }
         result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
         return {
@@ -269,6 +271,7 @@ def ingest_url(request: UrlIngestRequest):
             "title": title,
             "source_url": request.url,
             "updated_at": updated_at,
+            "synced_at": updated_at,
         }
         result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
         return {
@@ -333,6 +336,7 @@ def ingest_file(file: UploadFile = File(...)):
             "title": name_part,
             "source_url": "#",
             "updated_at": updated_at,
+            "synced_at": updated_at,
         }
         result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
         return {
