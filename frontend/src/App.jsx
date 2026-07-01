@@ -265,28 +265,6 @@ const formatMarkdown = (text) => {
   }).join('');
 };
 
-const OPTSIGNS_API_PRESETS = [
-  {
-    title: "REST API Gateway & OAuth Authentication Guide",
-    url: "https://support.optisigns.com/hc/en-us/articles/39080869746067-Handle-OAuth-Authentication-using-API-Gateway-Pre-request-Configuration"
-  },
-  {
-    title: "OptiDev Custom Coding App SDK Reference",
-    url: "https://support.optisigns.com/hc/en-us/articles/47616485609491-How-to-Use-the-OptiDev-App"
-  },
-  {
-    title: "YouTube Dashboard App API Configuration",
-    url: "https://support.optisigns.com/hc/en-us/articles/48626115821459-How-to-Use-the-YouTube-Dashboard-App"
-  },
-  {
-    title: "OptiSound API Licensed Background Music Controls",
-    url: "https://support.optisigns.com/hc/en-us/articles/40671590645651-How-to-Play-Licensed-Background-Music-on-Digital-Signs-with-OptiSound"
-  },
-  {
-    title: "Outlook Calendar Shared API & Graph Integration",
-    url: "https://support.optisigns.com/hc/en-us/articles/45619214182803-How-to-Set-Up-an-Outlook-Calendar-App-with-Shared-Permissions"
-  }
-];
 
 function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -305,13 +283,6 @@ function App() {
   const [autoReadEnabled, setAutoReadEnabled] = useState(true);
   const [showPresetsSelector, setShowPresetsSelector] = useState(false);
   const [checkedPresets, setCheckedPresets] = useState({});
-
-  // Compute missing preset URLs reactive count
-  const missingPresetsCount = OPTSIGNS_API_PRESETS.filter(preset => {
-    return !articles.some(art => 
-      (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
-    );
-  }).length;
 
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
@@ -337,6 +308,37 @@ function App() {
   const [syncStats, setSyncStats] = useState(null);
   const [articles, setArticles] = useState([]);
   const [activeStoreName, setActiveStoreName] = useState('Not Initialized');
+
+  const [apiPresets, setApiPresets] = useState([
+    {
+      title: "REST API Gateway & OAuth Authentication Guide",
+      url: "https://support.optisigns.com/hc/en-us/articles/39080869746067-Handle-OAuth-Authentication-using-API-Gateway-Pre-request-Configuration"
+    },
+    {
+      title: "OptiDev Custom Coding App SDK Reference",
+      url: "https://support.optisigns.com/hc/en-us/articles/47616485609491-How-to-Use-the-OptiDev-App"
+    },
+    {
+      title: "YouTube Dashboard App API Configuration",
+      url: "https://support.optisigns.com/hc/en-us/articles/48626115821459-How-to-Use-the-YouTube-Dashboard-App"
+    },
+    {
+      title: "OptiSound API Licensed Background Music Controls",
+      url: "https://support.optisigns.com/hc/en-us/articles/40671590645651-How-to-Play-Licensed-Background-Music-on-Digital-Signs-with-OptiSound"
+    },
+    {
+      title: "Outlook Calendar Shared API & Graph Integration",
+      url: "https://support.optisigns.com/hc/en-us/articles/45619214182803-How-to-Set-Up-an-Outlook-Calendar-App-with-Shared-Permissions"
+    }
+  ]);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+
+  // Compute missing preset URLs reactive count
+  const missingPresetsCount = apiPresets.filter(preset => {
+    return !articles.some(art => 
+      (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
+    );
+  }).length;
   const [showScrollButton, setShowScrollButton] = useState(false);
   const chatContainerRef = useRef(null);
 
@@ -1070,6 +1072,22 @@ function App() {
     runIngestionPipeline(urlInput.trim(), 'url');
   };
 
+  const fetchApiPresets = () => {
+    setIsLoadingPresets(true);
+    fetch('/api/presets/zendesk')
+      .then(res => res.json())
+      .then(data => {
+        if (data.presets && data.presets.length > 0) {
+          setApiPresets(data.presets);
+        }
+        setIsLoadingPresets(false);
+      })
+      .catch(err => {
+        console.error("Failed to load Zendesk API presets", err);
+        setIsLoadingPresets(false);
+      });
+  };
+
   const handleTogglePreset = (url) => {
     setCheckedPresets(prev => ({
       ...prev,
@@ -1079,7 +1097,7 @@ function App() {
 
   const handleSelectAllPresets = () => {
     const allChecked = {};
-    OPTSIGNS_API_PRESETS.forEach(p => {
+    apiPresets.forEach(p => {
       const isAlreadyIngested = articles.some(art => 
         (art.source_url || '').toLowerCase() === p.url.toLowerCase()
       );
@@ -1106,7 +1124,7 @@ function App() {
 
     for (let i = 0; i < urlsToIngest.length; i++) {
       const url = urlsToIngest[i];
-      const preset = OPTSIGNS_API_PRESETS.find(p => p.url === url);
+      const preset = apiPresets.find(p => p.url === url);
       const label = preset ? preset.title : "API Document";
       
       setTerminalLogs(prev => [
@@ -1211,7 +1229,7 @@ function App() {
   };
 
   const handleIngestRemainingPresets = () => {
-    const missingUrls = OPTSIGNS_API_PRESETS.filter(preset => {
+    const missingUrls = apiPresets.filter(preset => {
       const isAlreadyIngested = articles.some(art => 
         (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
       );
@@ -1866,7 +1884,13 @@ function App() {
                       <span className="text-slate-500 font-medium">Or use verified documentation presets:</span>
                       <button
                         type="button"
-                        onClick={() => setShowPresetsSelector(!showPresetsSelector)}
+                        onClick={() => {
+                          const nextState = !showPresetsSelector;
+                          setShowPresetsSelector(nextState);
+                          if (nextState) {
+                            fetchApiPresets();
+                          }
+                        }}
                         className="text-blue-400 hover:text-blue-300 font-semibold cursor-pointer underline flex items-center gap-1 select-none bg-transparent border-0"
                       >
                         {showPresetsSelector ? 'Hide API Presets' : '⚡ Select API Guides'}
@@ -1879,45 +1903,45 @@ function App() {
                           SUPPORTED APIS & CODING SDKS
                         </span>
                         
-                        <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
-                          {OPTSIGNS_API_PRESETS.map((preset, idx) => {
-                            const isChecked = !!checkedPresets[preset.url];
-                            const isAlreadyIngested = articles.some(art => 
-                              (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
-                            );
-                            return (
-                              <label 
-                                key={idx} 
-                                className={`flex items-start gap-2.5 text-xs select-none p-2 rounded-lg transition-colors border border-transparent ${
-                                  isAlreadyIngested 
-                                    ? 'opacity-40 cursor-not-allowed hover:bg-transparent' 
-                                    : 'cursor-pointer hover:bg-slate-900/60 hover:border-[#2d2d2d]'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isAlreadyIngested || isChecked}
-                                  disabled={isAlreadyIngested}
-                                  onChange={() => !isAlreadyIngested && handleTogglePreset(preset.url)}
-                                  className="mt-0.5 accent-blue-500 cursor-pointer disabled:cursor-not-allowed"
-                                />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-slate-200 font-semibold block text-[11px] leading-tight">{preset.title}</span>
-                                    {isAlreadyIngested && (
-                                      <span className="text-[8px] bg-green-950/60 text-green-400 border border-green-800/30 px-1 py-0.5 rounded font-mono uppercase tracking-wider scale-90 origin-left shrink-0 font-bold">
-                                        Ingested
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-[9px] text-slate-500 block truncate mt-0.5" title={preset.url}>
-                                    {preset.url}
-                                  </span>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
+                        {isLoadingPresets ? (
+                          <div className="flex flex-col items-center justify-center py-8 text-slate-500 text-[10px] gap-2 font-medium">
+                            <span className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
+                            Querying live Zendesk developer articles...
+                          </div>
+                        ) : (
+                          <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                            {apiPresets.filter(preset => !articles.some(art => (art.source_url || '').toLowerCase() === preset.url.toLowerCase())).length === 0 ? (
+                              <div className="text-center py-6 text-slate-500 text-xs font-semibold">
+                                🎉 All Zendesk API guides are already ingested!
+                              </div>
+                            ) : (
+                              apiPresets
+                                .filter(preset => !articles.some(art => (art.source_url || '').toLowerCase() === preset.url.toLowerCase()))
+                                .map((preset, idx) => {
+                                  const isChecked = !!checkedPresets[preset.url];
+                                  return (
+                                    <label 
+                                      key={idx} 
+                                      className="flex items-start gap-2.5 text-xs select-none p-2 rounded-lg transition-colors border border-transparent cursor-pointer hover:bg-slate-900/60 hover:border-[#2d2d2d]"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={() => handleTogglePreset(preset.url)}
+                                        className="mt-0.5 accent-blue-500 cursor-pointer"
+                                      />
+                                      <div className="flex-1 min-w-0">
+                                        <span className="text-slate-200 font-semibold block text-[11px] leading-tight">{preset.title}</span>
+                                        <span className="text-[9px] text-slate-500 block truncate mt-0.5" title={preset.url}>
+                                          {preset.url}
+                                        </span>
+                                      </div>
+                                    </label>
+                                  );
+                                })
+                            )}
+                          </div>
+                        )}
                         
                         <div className="flex gap-2 pt-2.5 border-t border-[#2d2d2d] flex-wrap sm:flex-nowrap">
                           <button

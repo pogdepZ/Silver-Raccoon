@@ -122,6 +122,85 @@ def get_status():
         "articles": sorted(articles, key=lambda x: x["title"])
     }
 
+@app.get("/api/presets/zendesk")
+def get_zendesk_presets():
+    state_path = "gemini_state.json"
+    ingested_urls = set()
+    if os.path.exists(state_path):
+        try:
+            with open(state_path, "r", encoding="utf-8") as f:
+                state = json.load(f)
+                for slug, meta in state.get("articles", {}).items():
+                    url = meta.get("source_url", "").strip().lower()
+                    if url:
+                        ingested_urls.add(url)
+        except Exception:
+            pass
+
+    import requests
+    try:
+        # Use Zendesk Search API to query ALL articles matching api/developer terms across all pages
+        presets_map = {}
+        search_terms = ["api", "developer", "sdk", "custom code", "webhook", "oauth"]
+        
+        for term in search_terms:
+            try:
+                search_url = f"https://support.optisigns.com/api/v2/help_center/articles/search.json?query={term}&per_page=50"
+                res = requests.get(search_url, timeout=8)
+                if res.status_code == 200:
+                    results = res.json().get("results", [])
+                    for art in results:
+                        if art.get("draft") or not art.get("body"):
+                            continue
+                        
+                        url = art.get("html_url", "")
+                        title = art.get("title", "")
+                        if url and title:
+                            normalized_url = url.strip().lower()
+                            presets_map[normalized_url] = {
+                                "title": title,
+                                "url": url,
+                                "ingested": normalized_url in ingested_urls
+                            }
+            except Exception as search_err:
+                print(f"Error querying Zendesk search for '{term}': {search_err}")
+
+        if presets_map:
+            return {"status": "success", "presets": list(presets_map.values())}
+            
+        raise Exception("No Zendesk articles returned from search API")
+
+    except Exception as e:
+        # Fallback to hardcoded list if offline or error
+        fallback = [
+            {
+                "title": "REST API Gateway & OAuth Authentication Guide",
+                "url": "https://support.optisigns.com/hc/en-us/articles/39080869746067-Handle-OAuth-Authentication-using-API-Gateway-Pre-request-Configuration",
+                "ingested": "https://support.optisigns.com/hc/en-us/articles/39080869746067-Handle-OAuth-Authentication-using-API-Gateway-Pre-request-Configuration".strip().lower() in ingested_urls
+            },
+            {
+                "title": "OptiDev Custom Coding App SDK Reference",
+                "url": "https://support.optisigns.com/hc/en-us/articles/47616485609491-How-to-Use-the-OptiDev-App",
+                "ingested": "https://support.optisigns.com/hc/en-us/articles/47616485609491-How-to-Use-the-OptiDev-App".strip().lower() in ingested_urls
+            },
+            {
+                "title": "YouTube Dashboard App API Configuration",
+                "url": "https://support.optisigns.com/hc/en-us/articles/48626115821459-How-to-Use-the-YouTube-Dashboard-App",
+                "ingested": "https://support.optisigns.com/hc/en-us/articles/48626115821459-How-to-Use-the-YouTube-Dashboard-App".strip().lower() in ingested_urls
+            },
+            {
+                "title": "OptiSound API Licensed Background Music Controls",
+                "url": "https://support.optisigns.com/hc/en-us/articles/40671590645651-How-to-Play-Licensed-Background-Music-on-Digital-Signs-with-OptiSound",
+                "ingested": "https://support.optisigns.com/hc/en-us/articles/40671590645651-How-to-Play-Licensed-Background-Music-on-Digital-Signs-with-OptiSound".strip().lower() in ingested_urls
+            },
+            {
+                "title": "Outlook Calendar Shared API & Graph Integration",
+                "url": "https://support.optisigns.com/hc/en-us/articles/45619214182803-How-to-Set-Up-an-Outlook-Calendar-App-with-Shared-Permissions",
+                "ingested": "https://support.optisigns.com/hc/en-us/articles/45619214182803-How-to-Set-Up-an-Outlook-Calendar-App-with-Shared-Permissions".strip().lower() in ingested_urls
+            }
+        ]
+        return {"status": "fallback", "presets": fallback}
+
 @app.get("/api/articles/{slug:path}")
 def get_article_content(slug: str):
     if not re.match(r"^[a-zA-Z0-9_-]+$", slug):
