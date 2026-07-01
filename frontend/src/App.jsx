@@ -146,6 +146,16 @@ function VolumeXIcon({ className = "w-4 h-4" }) {
   );
 }
 
+function MenuIcon({ className = "w-5 h-5" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <line x1="4" x2="20" y1="12" y2="12" />
+      <line x1="4" x2="20" y1="6" y2="6" />
+      <line x1="4" x2="20" y1="18" y2="18" />
+    </svg>
+  );
+}
+
 // --- Typing Word Stream Component for AI responses ---
 function WordStream({ text, onComplete }) {
   const [displayedText, setDisplayedText] = useState("");
@@ -208,6 +218,7 @@ const formatMarkdown = (text) => {
 };
 
 function App() {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('chat'); // 'chat' or 'knowledge'
   const [messages, setMessages] = useState([
     {
@@ -763,7 +774,7 @@ function App() {
   };
 
   return (
-    <div className="flex w-screen h-screen overflow-hidden bg-[#202123] text-slate-200 antialiased relative">
+    <div className="flex flex-col w-screen h-screen overflow-hidden bg-[#202123] text-slate-200 antialiased relative">
       
       {/* Toast Notification */}
       {toast.show && (
@@ -777,8 +788,38 @@ function App() {
         </div>
       )}
 
-      {/* 1. LEFT SIDEBAR (Locked height, static position, never scrolls with page) */}
-      <aside className="w-64 bg-[#191919] border-r border-[#2d2d2d] flex flex-col h-full shrink-0 select-none">
+      {/* Mobile Top Navbar (Hidden on Desktop) */}
+      <header className="md:hidden bg-[#191919] border-b border-[#2d2d2d] px-4 py-3 flex items-center justify-between shrink-0 select-none z-30">
+        <div className="flex items-center gap-2.5">
+          <button 
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            className="text-slate-400 hover:text-white p-1 hover:bg-[#2d2d2d] rounded cursor-pointer transition-colors"
+          >
+            <MenuIcon className="w-5 h-5" />
+          </button>
+          <div className="w-6 h-6 rounded bg-[#2563eb] text-white flex items-center justify-center font-bold text-xs shadow-sm">
+            O
+          </div>
+          <span className="font-semibold text-white text-sm tracking-wide">OptiBot</span>
+        </div>
+      </header>
+
+      {/* Main Container Wrapper */}
+      <div className="flex-1 flex overflow-hidden relative">
+        
+        {/* Mobile Sidebar backdrop */}
+        {mobileSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+
+        {/* 1. LEFT SIDEBAR (Locked height, static position, never scrolls with page) */}
+        <aside className={`fixed md:relative inset-y-0 left-0 w-64 bg-[#191919] border-r border-[#2d2d2d] flex flex-col h-full shrink-0 select-none z-50 transform md:transform-none transition-transform duration-300 ease-in-out ${
+          mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}>
         
         {/* App Logo */}
         <div className="p-4 border-b border-[#2d2d2d] flex items-center gap-2.5 shrink-0">
@@ -795,7 +836,7 @@ function App() {
           {/* Navigation items (shrink-0) */}
           <div className="space-y-1 shrink-0 mb-6">
             <div 
-              onClick={() => setActiveView('chat')}
+              onClick={() => { setActiveView('chat'); setMobileSidebarOpen(false); }}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
                 activeView === 'chat' 
                   ? 'bg-[#2d2d2d] text-white' 
@@ -806,7 +847,7 @@ function App() {
               <span>Chat</span>
             </div>
             <div 
-              onClick={() => setActiveView('knowledge')}
+              onClick={() => { setActiveView('knowledge'); setMobileSidebarOpen(false); }}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
                 activeView === 'knowledge' 
                   ? 'bg-[#2d2d2d] text-white' 
@@ -817,7 +858,7 @@ function App() {
               <span>Knowledge Base</span>
             </div>
             <div 
-              onClick={() => setActiveView('explorer')}
+              onClick={() => { setActiveView('explorer'); setMobileSidebarOpen(false); }}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
                 activeView === 'explorer' 
                   ? 'bg-[#2d2d2d] text-white' 
@@ -828,7 +869,7 @@ function App() {
               <span>RAG Playground</span>
             </div>
             <div 
-              onClick={() => setActiveView('logs')}
+              onClick={() => { setActiveView('logs'); setMobileSidebarOpen(false); }}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
                 activeView === 'logs' 
                   ? 'bg-[#2d2d2d] text-white' 
@@ -1104,7 +1145,7 @@ function App() {
           </header>
 
           {/* Main Dashboard Layout (Split-screen: left for upload controls, right for recent ledger) */}
-          <div className="flex-1 flex overflow-hidden w-full p-6 gap-6">
+          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden w-full p-4 lg:p-6 gap-6">
             
             {/* Left Main Card (Input controls) */}
             <div className="flex-1 flex flex-col overflow-y-auto space-y-6">
@@ -1306,7 +1347,7 @@ function App() {
             </div>
 
             {/* Right Panel Card (Recent Ledger) */}
-            <div className="w-80 bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] shadow-md flex flex-col overflow-hidden shrink-0">
+            <div className="w-full lg:w-80 h-64 lg:h-auto bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] shadow-md flex flex-col overflow-hidden shrink-0">
               <div className="p-4 border-b border-[#3d3d3d] shrink-0">
                 <h3 className="font-semibold text-white text-sm">Recent Ingestions</h3>
                 <p className="text-[11px] text-slate-500">Live ledger of synced document chunks</p>
@@ -1619,6 +1660,7 @@ function App() {
       </div>
 
     </div>
+  </div>
   );
 }
 
