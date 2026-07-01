@@ -126,6 +126,26 @@ function ChevronDownIcon({ className = "w-4 h-4" }) {
   );
 }
 
+function MicrophoneIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+      <line x1="12" x2="12" y1="19" y2="22" />
+    </svg>
+  );
+}
+
+function VolumeXIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="22" x2="16" y1="9" y2="15" />
+      <line x1="16" x2="22" y1="9" y2="15" />
+    </svg>
+  );
+}
+
 // --- Typing Word Stream Component for AI responses ---
 function WordStream({ text, onComplete }) {
   const [displayedText, setDisplayedText] = useState("");
@@ -461,6 +481,7 @@ function App() {
         sources: data.sources || [],
         isStreaming: true
       }]);
+      speakText(data.answer);
     } catch (error) {
       console.warn("Backend error or offline. Generating mock response.");
       setTimeout(() => {
@@ -494,11 +515,77 @@ function App() {
           sources: sources,
           isStreaming: true
         }]);
+        speakText(answer);
         setIsLoading(false);
       }, 1000);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // --- SPEECH STATES AND HANDLERS (Idea 4) ---
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const startSpeechRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showToastNotification('Speech recognition is not supported in this browser.', 'warning');
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    
+    recognition.onstart = () => {
+      setIsListening(true);
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setIsSpeaking(false);
+    };
+    
+    recognition.onresult = (event) => {
+      const speechToText = event.results[0][0].transcript;
+      setInputValue(speechToText);
+      showToastNotification(`Captured speech: "${speechToText}"`, 'success');
+    };
+    
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+    
+    recognition.start();
+  };
+
+  const speakText = (text) => {
+    if (!window.speechSynthesis) return;
+    
+    window.speechSynthesis.cancel();
+    
+    const cleanText = text
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/#/g, '')
+      .replace(/\[(.*?)\]\((.*?)\)/g, '$1')
+      .replace(/Article URL:.*$/g, '')
+      .substring(0, 350);
+      
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'en-US';
+    
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    
+    window.speechSynthesis.speak(utterance);
   };
 
   // --- Ingestion Pipeline Simulator ---
@@ -958,10 +1045,41 @@ function App() {
                   placeholder="Ask OptiBot about OptiSigns..."
                   className="flex-1 bg-[#2d2d2d] border border-[#3d3d3d] rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 />
+                
+                <button
+                  type="button"
+                  onClick={startSpeechRecognition}
+                  disabled={isLoading}
+                  className={`px-3.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer ${
+                    isListening
+                      ? 'bg-red-900/40 text-red-400 border-red-800/30 animate-pulse'
+                      : 'bg-[#2d2d2d] text-slate-400 hover:text-white border-[#3d3d3d] hover:border-slate-500'
+                  }`}
+                  title={isListening ? "Listening... Speak now" : "Speak your query"}
+                >
+                  <MicrophoneIcon className="w-4 h-4" />
+                </button>
+
+                {isSpeaking && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.speechSynthesis) {
+                        window.speechSynthesis.cancel();
+                        setIsSpeaking(false);
+                      }
+                    }}
+                    className="px-3.5 rounded-xl border bg-yellow-950/20 text-yellow-400 border-yellow-900/30 hover:border-yellow-500/30 flex items-center justify-center cursor-pointer transition-all active:scale-95 animate-bounce"
+                    title="Mute / Stop reading aloud"
+                  >
+                    <VolumeXIcon className="w-4 h-4" />
+                  </button>
+                )}
+
                 <button
                   type="submit"
                   disabled={isLoading || !inputValue.trim()}
-                  className="bg-[#2563eb] hover:bg-[#1d4ed8] active:bg-[#1e3a8a] text-white px-4 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="bg-[#2563eb] hover:bg-[#1d4ed8] active:bg-[#1e3a8a] text-white px-4 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   <span>Send</span>
                   <SendIcon className="w-3.5 h-3.5 text-white" />
