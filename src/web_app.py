@@ -106,9 +106,19 @@ def get_status():
         except Exception:
             pass
             
+    # Calculate live database stats dynamically from state
+    active_count = sum(1 for a in articles if a.get("active", True))
+    live_stats = {
+        "total_scraped": len(articles),
+        "added": active_count,
+        "skipped": sync_log.get("skipped", 0),
+        "removed": sync_log.get("removed", 0),
+        "completed_at": sync_log.get("completed_at", "")
+    }
+    
     return {
         "vector_store_name": vector_store_name,
-        "last_run": sync_log,
+        "last_run": live_stats,
         "articles": sorted(articles, key=lambda x: x["title"])
     }
 
