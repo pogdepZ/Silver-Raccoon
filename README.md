@@ -106,23 +106,35 @@ docker build -t silver-raccoon-sync .
 
 ### Run Sync Job in Docker
 ```bash
-docker run -e GEMINI_API_KEY="your-gemini-api-key" silver-raccoon-sync
+# You can use API_KEY or GEMINI_API_KEY
+docker run -e API_KEY="your-gemini-api-key" silver-raccoon-sync
 ```
 
 ### Run Web Console in Docker
 To run the React + FastAPI console in Docker, expose port 8000:
 ```bash
-docker run -p 8000:8000 -e GEMINI_API_KEY="your-gemini-api-key" silver-raccoon-sync python main.py --serve
+docker run -p 8000:8000 -e API_KEY="your-gemini-api-key" silver-raccoon-sync python main.py --serve
 ```
 
 ---
 
 ## Production Deployment (Daily Job)
 
-We deploy the scheduled worker using **GitHub Actions**.
+We support two ways to deploy the daily scheduled worker:
 
-### State Persistence
+### Option A: GitHub Actions (Recommended)
 Because GitHub Actions runners are stateless, we use `actions/cache` to preserve `gemini_state.json` and the scraped markdown directory across runs, allowing true delta logic to function.
 - **GitHub Workflow**: Located at `.github/workflows/daily_sync.yml`.
 - **Logs / Runs URL**: `https://github.com/<owner>/<repo>/actions`
 - **Execution Log Artifact**: On completion, the runner uploads `logs/last_run.json` as a build artifact.
+
+### Option B: VPS Cron Job
+If you deployed on your Azure VPS, you can easily configure a native daily cron job:
+1. Open the crontab editor:
+   ```bash
+   crontab -e
+   ```
+2. Add this line at the bottom to run the sync every day at midnight:
+   ```bash
+   0 0 * * * cd /home/azureuser/Silver-Raccoon && /home/azureuser/Silver-Raccoon/.venv/bin/python main.py >> /home/azureuser/Silver-Raccoon/logs/daily_sync.log 2>&1
+   ```
