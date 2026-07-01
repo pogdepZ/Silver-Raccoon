@@ -1,6 +1,6 @@
-# Silver Raccoon: KB Sync Engine & Support Bot (Gemini Edition)
+# OptiBot - Grounded Customer Support AI Agent & RAG Playground
 
-A lightweight, production-ready Knowledge Base (KB) synchronization engine and AI support assistant built for the OptiSigns.com RAG Take-Home Test. It features a parallelized scraping pipeline, delta-upload tracking, and a modern React + FastAPI Web Dashboard.
+A production-grade, highly interactive Retrieval-Augmented Generation (RAG) customer support agent and administrative console built for the OptiSigns.com RAG Take-Home Test. OptiBot synchronizes Zendesk Help Center support articles, processes document indexes, and runs a modern React + FastAPI web interface packed with advanced diagnostic and multi-modal features.
 
 ---
 
@@ -53,16 +53,68 @@ Ingestion and indexing are fully parallelized using a python `ThreadPoolExecutor
 
 ---
 
-## Getting Started
+## Key Advanced Features (The "Wow" Factors)
+
+### 📂 RAG Slide-over Document Drawer
+When a user clicks on a Grounded Source card below the chat bubble or inside the sidebar checklist, a beautiful slide-over drawer panel slides in from the right edge of the screen. It retrieves the local Markdown document content from the backend securely and displays the raw article inline.
+
+### 🛡️ API Path Traversal Prevention
+The article content retrieval endpoint `/api/articles/{slug:path}` includes strict Regex sanitization checks (`^[a-zA-Z0-9_-]+$`) to prevent attackers from executing path traversal requests (e.g. `../../etc/passwd`) and accessing illegal files.
+
+### 🔬 Semantic RAG Diagnostics Playground
+An admin-facing **RAG Playground** tab lets you input test support queries to inspect:
+* **Intent Classification**: Evaluated category (`PRODUCT_SUPPORT` or `GENERAL_KNOWLEDGE`).
+* **Semantic Relevance Heatmaps**: List of matching chunks retrieved by Gemini, with a dynamic Jaccard text similarity progress bar indicating match weights.
+* **Source Document Linkages**: Click the matching chunk title to slide out the Drawer panel immediately.
+* **Synthesized AI Output**: Raw text answer formulated strictly from the grounded chunks.
+
+### 🖥️ System Diagnostics Live Terminal
+The **System Logs** view features a retro-styled blinking terminal console that streams diagnostics logs in real-time. When an ingestion is triggered (file upload, URL scrape, or text sync), the terminal prints detailed pipeline trace steps as they run.
+
+### 🎙️ Multi-modal Voice Assistant (STT & TTS)
+* **Speech-to-Text (STT)**: A microphone button uses Chrome/Safari's native `SpeechRecognition` API to record voice questions in English, converting audio to text input fields.
+* **Text-to-Speech (TTS)**: Bot responses trigger a text-to-speech speaker output (`SpeechSynthesis`) that reads the steps aloud.
+* **Mute Control**: A pulsating Speaker icon appears during playback, allowing users to cancel speech output on click.
+
+### 📱 Responsive Layouts
+Fully responsive viewport support:
+* Desktop features a static dashboard layout.
+* Mobile viewports collapse the sidebar into a sliding overlay drawer toggleable via a top header Hamburger menu.
+* Grids and ledger cards stack vertically (`flex-col lg:flex-row`) to optimize spacing on small touchscreens.
+
+---
+
+## Project Structure
+
+```
+├── .github/workflows/       # GitHub CI/CD Actions
+│   ├── daily_sync.yml       # Nightly RAG sync runner
+│   └── deploy.yml           # VPS auto-deploy script
+├── data/articles/           # Local cache of scraped support Markdown articles
+├── frontend/                # React Dashboard Console source (Vite + Tailwind)
+├── logs/                    # Scraping & Ingest summaries
+├── src/
+│   ├── ai_sync.py           # Gemini File Search Store integration
+│   ├── query_router.py      # Gemini Chat routing & classification logic
+│   ├── scraper.py           # Zendesk API web scraper
+│   └── web_app.py           # FastAPI server endpoints
+├── tests/                   # Python unit tests
+├── main.py                  # CLI Entrypoint for Syncing and Serving
+└── requirements.txt         # Server dependencies
+```
+
+---
+
+## Installation & Setup
 
 ### Prerequisites
 * Python 3.11+
-* Node.js 18+ (for building frontend)
-* Google Gemini API Key (AI Studio)
+* Node.js 18+
+* Google Gemini API Key
 
 ### Local Installation
 1. Clone the repository.
-2. Initialize and activate a virtual environment:
+2. Initialize and activate virtual environment:
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
@@ -74,7 +126,7 @@ Ingestion and indexing are fully parallelized using a python `ThreadPoolExecutor
 4. Copy the sample environment file and enter your API Key:
    ```bash
    cp .env.sample .env
-   # Open .env and set GEMINI_API_KEY="your-key-here"
+   # Set GEMINI_API_KEY="your-gemini-key"
    ```
 5. Compile the React Frontend:
    ```bash
@@ -84,85 +136,44 @@ Ingestion and indexing are fully parallelized using a python `ThreadPoolExecutor
    cd ..
    ```
 
+### Running the App
+1. **Run Synchronization (Delta Scraper -> Gemini)**:
+   ```bash
+   python main.py
+   ```
+2. **Start Web Server**:
+   ```bash
+   python main.py --serve
+   ```
+   Open **`http://localhost:8000`** in your browser.
+
 ---
 
-## Running the Application
+## Unit Testing
 
-### 1. Run Synchronization (Delta Scraper -> Gemini)
-To execute the scraper-uploader job once:
-```bash
-python main.py
-```
-This runs the sync, outputs log statistics to the console, and writes a detailed summary to `logs/last_run.json`.
+The repository includes a comprehensive unit testing suite covering scraping operations, file parsing, query classifications, and API endpoints (including path traversal security locks).
 
-### 2. Run the Web Console Server
-To start the React + FastAPI web console:
+To execute the test suite, run:
 ```bash
-python main.py --serve
-```
-Open **`http://localhost:8000`** in your browser:
-* **Chat Panel**: Interact with OptiBot. It uses the `gemini-3.1-flash-lite` model for fast, cost-effective RAG search, outputting answers strictly grounded in the ingested files with clean citations.
-* **Knowledge Base Panel**: An admin panel where you can ingest new files, scrape URLs, or write text manually, viewing a live visual RAG ingestion pipeline.
-
-### 3. Programmatic CLI Query
-Test the RAG assistant directly from your terminal:
-```bash
-python ask_gemini.py "How do I add a YouTube video?"
+./.venv/bin/python3 -m unittest discover -s tests
 ```
 
 ---
 
-## Docker Deployment
+## CI/CD VPS Auto-Deployment
 
-### Build the Image
-```bash
-docker build -t silver-raccoon-sync .
-```
-
-### Run Sync Job in Docker
-Runs the scraper job once and exits `0`:
-```bash
-docker run -e API_KEY="your-gemini-api-key" silver-raccoon-sync
-```
-
-### Run Web Console in Docker
-```bash
-docker run -p 8000:8000 -e API_KEY="your-gemini-api-key" silver-raccoon-sync python main.py --serve
-```
+We have set up an automated CI/CD pipeline using **GitHub Actions** (`.github/workflows/deploy.yml`).
+* **Trigger**: A push to the `main` branch.
+* **Mechanism**: The workflow authenticates with the Azure VPS via SSH, pulls the latest code, compiles the static React files (`npm run build`), and restarts the `optibot` systemd backend API service.
+* **Prerequisites**: Configure Secrets in your repository:
+  - `VPS_HOST`: VPS IP Address (e.g. `40.82.145.30`)
+  - `VPS_USERNAME`: SSH Username (e.g. `azureuser`)
+  - `VPS_SSH_KEY`: Full private SSH key (`SilverRaccoon_key.pem` content)
 
 ---
 
-## Daily Sync Job Scheduling
+## Deliverables Checklist
 
-### Option A: GitHub Actions (Recommended)
-We provide a ready-to-use GitHub Actions workflow. Since runners are stateless, it uses `actions/cache` to persist the RAG state:
-* **Workflow File**: `.github/workflows/daily_sync.yml` (triggered daily at midnight UTC or manually).
-* **Logs & Runs**: Check your GitHub repo’s **Actions** tab.
-* **Artifact**: The execution summary is uploaded as `last-run-log` containing `logs/last_run.json`.
-
-### Option B: VPS Cron Job
-If you deployed on your Azure VPS, open crontab:
-```bash
-crontab -e
-```
-Add the following line to run the daily sync at midnight:
-```bash
-0 0 * * * cd /home/azureuser/Silver-Raccoon && /home/azureuser/Silver-Raccoon/.venv/bin/python main.py >> /home/azureuser/Silver-Raccoon/logs/daily_sync.log 2>&1
-```
-
----
-
-## Deliverables & Screenshots Guide
-
-Before submitting your project review, make sure you take and add the following files to your submission package:
-
-1. **RAG Sanity Check Screenshot**:
-   * Open the Web Console (`http://localhost:8000` or your VPS link `http://40.82.145.30`).
-   * Ask the bot: `"How do I add a YouTube video?"`
-   * Take a screenshot showing the correct response outlining the steps (including the YouTube Shorts formatting tip) and the citations/sources at the bottom.
-   * Save this screenshot as `screenshot.png` in the root of this project.
-2. **GitHub Repository Link**:
-   * Ensure your repository has a cryptic name (e.g. `SilverRaccoon`) and does NOT contain the word "optisigns".
-   * Commit and push your local `code-ui` branch to GitHub.
-3. **Daily Job Logs**:
-   * Link your GitHub Actions run URL in your final submission email.
+1. **RAG Sanity Check Screenshot**: Ask *"How do I add a YouTube video?"* on the live site `http://40.82.145.30` and verify the grounding sources are correct. Save this screenshot as `screenshot.png` in the root folder.
+2. **GitHub Repository**: Push code to a hidden repository name.
+3. **Actions Link**: Verify the daily runs and deployment runs execute successfully.

@@ -146,6 +146,16 @@ function VolumeXIcon({ className = "w-4 h-4" }) {
   );
 }
 
+function TrashIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    </svg>
+  );
+}
+
 function MenuIcon({ className = "w-5 h-5" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -220,14 +230,24 @@ const formatMarkdown = (text) => {
 function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('chat'); // 'chat' or 'knowledge'
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: 'Hello! I am **OptiBot**, the customer-support assistant for OptiSigns. Ask me anything about configuring screens, apps, or troubleshooting player issues!',
-      sources: []
+  const [messages, setMessages] = useState(() => {
+    const saved = localStorage.getItem('optibot_chat_messages');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.warn("Failed to parse saved chat messages", e);
+      }
     }
-  ]);
+    return [
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content: 'Hello! I am **OptiBot**, the customer-support assistant for OptiSigns. Ask me anything about configuring screens, apps, or troubleshooting player issues!',
+        sources: []
+      }
+    ];
+  });
   
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -429,6 +449,27 @@ function App() {
   useEffect(() => {
     refreshStatus();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('optibot_chat_messages', JSON.stringify(messages));
+  }, [messages]);
+
+  const handleClearChat = () => {
+    const welcomeMsg = [
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content: 'Hello! I am **OptiBot**, the customer-support assistant for OptiSigns. Ask me anything about configuring screens, apps, or troubleshooting player issues!',
+        sources: []
+      }
+    ];
+    setMessages(welcomeMsg);
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+    showToastNotification('Chat history cleared', 'success');
+  };
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
@@ -955,8 +996,21 @@ function App() {
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse"></span> Grounded
               </span>
             </div>
-            <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
-              gemini-3.1-flash-lite
+            <div className="flex items-center gap-3">
+              {messages.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleClearChat}
+                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-[#2d2d2d] border border-red-900/40 hover:border-red-500/30 px-2.5 py-1 rounded cursor-pointer transition-all select-none"
+                  title="Clear chat history"
+                >
+                  <TrashIcon className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                  <span>Clear Chat</span>
+                </button>
+              )}
+              <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
+                gemini-3.1-flash-lite
+              </div>
             </div>
           </header>
 
