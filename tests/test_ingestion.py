@@ -238,3 +238,70 @@ class TestIngestionEndpoints(unittest.TestCase):
         self.assertEqual(data["classification"], "GENERAL_KNOWLEDGE")
         self.assertEqual(data["answer"], "General reply.")
         self.assertEqual(len(data["chunks"]), 0)
+
+    @patch("src.web_app.AssistantManager")
+    def test_toggle_article_active(self, mock_manager_class):
+        mock_manager = MagicMock()
+        mock_manager.delete_file_from_assistant.return_value = True
+        mock_manager.upload_file_to_vector_store.return_value = "new-document-name-abc"
+        mock_manager_class.return_value = mock_manager
+
+        dummy_slug = "test-article-for-active-toggle"
+        dummy_filepath = "data/articles/test-article-for-active-toggle.md"
+        
+        os.makedirs("data/articles", exist_ok=True)
+        with open(dummy_filepath, "w") as f:
+            f.write("Some dummy markdown text content")
+        self.created_files.append(dummy_filepath)
+
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+            
+        state["articles"][dummy_slug] = {
+            "title": "Test Toggle Article",
+            "article_id": 999111,
+            "source_url": "https://support.optisigns.com/hc/en-us/articles/999111",
+            "filepath": dummy_filepath,
+            "document_name": "fileSearchStores/test-store-123/documents/doc-abc-123",
+            "active": True
+        }
+        
+        with open(self.state_file, "w") as f:
+            json.dump(state, f)
+
+        # 1. DEACTIVATE IT
+        response = self.client.post(f"/api/articles/{dummy_slug}/toggle-active")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["active"], False)
+        
+        mock_manager.delete_file_from_assistant.assert_called_with("fileSearchStores/test-store-123/documents/doc-abc-123")
+        
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+            self.assertEqual(state["articles"][dummy_slug]["active"], False)
+            self.assertIsNone(state["articles"][dummy_slug]["document_name"])
+
+        # 2. REACTIVATE IT
+        response = self.client.post(f"/api/articles/{dummy_slug}/toggle-active")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["active"], True)
+        
+        mock_manager.upload_file_to_vector_store.assert_called_with(
+            dummy_filepath,
+            "fileSearchStores/test-store-123",
+            {
+                "article_id": 999111,
+                "title": "Test Toggle Article",
+                "source_url": "https://support.optisigns.com/hc/en-us/articles/999111",
+                "slug": dummy_slug
+            }
+        )
+        
+        with open(self.state_file, "r") as f:
+            state = json.load(f)
+            self.assertEqual(state["articles"][dummy_slug]["active"], True)
+            self.assertEqual(state["articles"][dummy_slug]["document_name"], "new-document-name-abc")

@@ -159,6 +159,10 @@ def get_article_content(slug: str):
 
 @app.post("/api/articles/{slug:path}/toggle-active")
 def toggle_article_active(slug: str):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
+        
     state_path = "gemini_state.json"
     if not os.path.exists(state_path):
         raise HTTPException(status_code=400, detail="Sync state file not found.")
@@ -171,11 +175,34 @@ def toggle_article_active(slug: str):
         if slug not in articles:
             raise HTTPException(status_code=404, detail="Article not found in state.")
             
-        # Flip the active state (default to True)
         current_active = articles[slug].get("active", True)
         new_active = not current_active
-        articles[slug]["active"] = new_active
         
+        manager = AssistantManager(api_key=api_key)
+        vector_store_name = state.get("file_search_store_name")
+        if not vector_store_name:
+            raise HTTPException(status_code=400, detail="Vector store not initialized in state.")
+            
+        if not new_active:
+            # DEACTIVATE: Delete from vector store instantly
+            doc_name = articles[slug].get("document_name")
+            if doc_name:
+                manager.delete_file_from_assistant(doc_name)
+                articles[slug]["document_name"] = None
+        else:
+            # ACTIVATE: Re-upload to vector store
+            filepath = articles[slug].get("filepath")
+            if filepath and os.path.exists(filepath):
+                metadata = {
+                    "article_id": articles[slug].get("article_id"),
+                    "title": articles[slug].get("title"),
+                    "source_url": articles[slug].get("source_url"),
+                    "slug": slug,
+                }
+                new_doc_name = manager.upload_file_to_vector_store(filepath, vector_store_name, metadata)
+                articles[slug]["document_name"] = new_doc_name
+                
+        articles[slug]["active"] = new_active
         state["articles"] = articles
         
         with open(state_path, "w", encoding="utf-8") as f:
