@@ -93,7 +93,6 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
     category = classify_question(client, message)
     
     if category == "PRODUCT_SUPPORT":
-        # Call with file search store and product support system prompt
         response = client.models.generate_content(
             model=model_name,
             contents=message,
@@ -110,9 +109,11 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
             )
         )
         sources = []
+        has_grounding = False
         if response.candidates and response.candidates[0].grounding_metadata:
             metadata = response.candidates[0].grounding_metadata
             if metadata.grounding_chunks:
+                has_grounding = True
                 for chunk in metadata.grounding_chunks:
                     title = "Vector Store Chunk"
                     if chunk.retrieved_context:
@@ -121,9 +122,27 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
                         title = chunk.web.title or chunk.web.uri
                     if title not in sources:
                         sources.append(title)
+        
+        # If RAG found grounded documents, return the response
+        if has_grounding:
+            return {
+                "answer": response.text or "[No response text generated]",
+                "sources": sources,
+                "classification": category
+            }
+            
+        # If RAG found no documents, call Gemini with general knowledge
+        general_response = client.models.generate_content(
+            model=model_name,
+            contents=message,
+            config=types.GenerateContentConfig(
+                system_instruction=GENERAL_SYSTEM_PROMPT,
+                temperature=0.0,
+            )
+        )
         return {
-            "answer": response.text or "[No response text generated]",
-            "sources": sources,
+            "answer": general_response.text or "[No response text generated]",
+            "sources": [],
             "classification": category
         }
     
