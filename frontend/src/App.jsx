@@ -156,6 +156,16 @@ function TrashIcon({ className = "w-4 h-4" }) {
   );
 }
 
+function DatabaseIcon({ className = "w-4 h-4" }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+      <path d="M3 12A9 3 0 0 0 21 12" />
+    </svg>
+  );
+}
+
 function MenuIcon({ className = "w-5 h-5" }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -231,6 +241,7 @@ function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [activeView, setActiveView] = useState('chat'); // 'chat' or 'knowledge'
   const [ragActive, setRagActive] = useState(true);
+  const [articleSearchQuery, setArticleSearchQuery] = useState('');
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -927,6 +938,20 @@ function App() {
               <span>Knowledge Base</span>
             </div>
             <div 
+              onClick={() => { setActiveView('articles'); setMobileSidebarOpen(false); }}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
+                activeView === 'articles' 
+                  ? 'bg-[#2d2d2d] text-white' 
+                  : 'text-slate-400 hover:bg-[#2d2d2d]/50 hover:text-white'
+              }`}
+            >
+              <DatabaseIcon className="w-4 h-4 text-blue-400" />
+              <span>Ingested Articles</span>
+              <span className="ml-auto text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded-full font-mono">
+                {articles.length}
+              </span>
+            </div>
+            <div 
               onClick={() => { setActiveView('explorer'); setMobileSidebarOpen(false); }}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
                 activeView === 'explorer' 
@@ -950,70 +975,6 @@ function App() {
             </div>
           </div>
 
-          {/* Ingested Articles section (flex-1, scrolls independently if overflowed) */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <h3 className="px-3 text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2 shrink-0">
-              Ingested Articles ({articles.length})
-            </h3>
-            <div className="flex-1 overflow-y-auto space-y-1 px-1">
-              {articles.map((art, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => openArticleInDrawer(art.slug)}
-                  className={`group flex items-center justify-between px-2 py-1.5 rounded-md text-xs transition-colors cursor-pointer select-none ${
-                    art.active === false 
-                      ? 'bg-[#1e1e1e]/20 text-slate-500 hover:bg-[#2d2d2d]/30' 
-                      : 'text-slate-300 hover:bg-[#2d2d2d]/60 hover:text-white'
-                  }`}
-                  title={art.active === false ? "RAG Deactivated. Click to read cached article inline" : "RAG Active. Click to read cached article inline"}
-                >
-                  <div className="flex items-center gap-2 truncate pr-1.5 flex-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleArticleActive(art.slug);
-                      }}
-                      className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
-                        art.active !== false
-                          ? 'bg-blue-600 border-blue-500 hover:bg-blue-700'
-                          : 'bg-transparent border-[#3d3d3d] hover:border-slate-500'
-                      }`}
-                      title={art.active !== false ? "Article is ACTIVE. Click to deactivate in RAG." : "Article is INACTIVE. Click to activate in RAG."}
-                    >
-                      {art.active !== false && (
-                        <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </button>
-                    
-                    <FileTextIcon className={`w-3.5 h-3.5 shrink-0 ${art.active === false ? 'text-slate-600' : 'text-blue-400'}`} />
-                    <span className={`truncate ${art.active === false ? 'line-through decoration-slate-600/60 text-slate-600' : ''}`}>
-                      {art.title}
-                    </span>
-                  </div>
-                  {art.source_url && art.source_url !== '#' && (
-                    <a
-                      href={art.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-[#3d3d3d] rounded text-slate-400 hover:text-blue-400 transition-all shrink-0"
-                      title="View original help article URL"
-                    >
-                      <LinkIcon className="w-3 h-3" />
-                    </a>
-                  )}
-                </div>
-              ))}
-              {articles.length === 0 && (
-                <div className="text-xs text-slate-500 p-3 text-center italic">
-                  No articles loaded.
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Sync dashboard at bottom of sidebar (shrink-0) */}
@@ -1747,6 +1708,148 @@ function App() {
                 <div className="flex items-center gap-1 font-mono">
                   <span className="text-[#38bdf8] select-none">$ </span>
                   <span className="w-2 h-4 bg-green-500 animate-[pulse_1s_infinite]" />
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </main>
+      )}
+
+      {/* 6. INGESTED KNOWLEDGE BASE VIEW (Only shown when activeView === 'articles') */}
+      {activeView === 'articles' && (
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#202123]">
+          {/* Header */}
+          <header className="p-4 border-b border-[#2d2d2d] bg-[#202123]/80 backdrop-blur-sm shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col">
+              <h2 className="font-semibold text-white text-base sm:text-lg">Ingested Knowledge Base</h2>
+              <p className="text-xs text-slate-400">Manage and verify the grounding documents stored in the Gemini Vector Store</p>
+            </div>
+            <div className="text-xs text-slate-400 font-mono bg-[#191919] border border-[#2d2d2d] px-2.5 py-1 rounded">
+              Total: {articles.length} Documents
+            </div>
+          </header>
+
+          {/* Articles Table Grid */}
+          <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+            <div className="max-w-6xl mx-auto space-y-4">
+              
+              {/* Search bar */}
+              <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-4 flex gap-4 items-center">
+                <input
+                  type="text"
+                  placeholder="Search articles by title..."
+                  value={articleSearchQuery}
+                  onChange={(e) => setArticleSearchQuery(e.target.value)}
+                  className="flex-1 bg-[#191919] border border-[#3d3d3d] rounded-lg px-3.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Table wrapper */}
+              <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] overflow-hidden shadow-md">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#3d3d3d] bg-[#1c1d1f] text-slate-400 text-[10px] font-bold uppercase tracking-wider select-none">
+                        <th className="p-4 w-12 text-center">RAG</th>
+                        <th className="p-4">Title</th>
+                        <th className="p-4 hidden sm:table-cell">Source Type</th>
+                        <th className="p-4 hidden md:table-cell">ID</th>
+                        <th className="p-4 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#3d3d3d]/50 text-xs text-slate-300">
+                      {articles
+                        .filter(art => art.title.toLowerCase().includes(articleSearchQuery.toLowerCase()))
+                        .map((art, idx) => {
+                          const isInactive = art.active === false;
+                          return (
+                            <tr 
+                              key={idx} 
+                              className={`hover:bg-[#2c2d30]/30 transition-colors ${
+                                isInactive ? 'text-slate-500 bg-[#1e1e1e]/10' : ''
+                              }`}
+                            >
+                              <td className="p-4 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleArticleActive(art.slug)}
+                                  className={`w-4 h-4 mx-auto rounded flex items-center justify-center border transition-all cursor-pointer ${
+                                    art.active !== false
+                                      ? 'bg-blue-600 border-blue-500 hover:bg-blue-700'
+                                      : 'bg-transparent border-[#4d4d4d] hover:border-slate-500'
+                                  }`}
+                                  title={art.active !== false ? "Click to deactivate this article" : "Click to activate this article"}
+                                >
+                                  {art.active !== false && (
+                                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </button>
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col gap-0.5 max-w-md sm:max-w-xl">
+                                  <button
+                                    onClick={() => openArticleInDrawer(art.slug)}
+                                    className={`text-left font-medium hover:text-blue-400 hover:underline cursor-pointer truncate ${
+                                      isInactive ? 'line-through text-slate-600' : 'text-slate-200'
+                                    }`}
+                                  >
+                                    {art.title}
+                                  </button>
+                                  {art.source_url && art.source_url !== '#' && (
+                                    <span className="text-[10px] text-slate-500 truncate select-all">{art.source_url}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-4 hidden sm:table-cell">
+                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                  art.source_url && art.source_url.startsWith('http') 
+                                    ? 'bg-purple-900/40 text-purple-300 border border-purple-800/20' 
+                                    : (art.title.startsWith('manual-') 
+                                        ? 'bg-green-900/40 text-green-300 border border-green-800/20' 
+                                        : 'bg-blue-900/40 text-blue-300 border border-blue-800/20')
+                                }`}>
+                                  {art.source_url && art.source_url.startsWith('http') ? 'url' : (art.title.startsWith('manual-') ? 'manual' : 'file')}
+                                </span>
+                              </td>
+                              <td className="p-4 hidden md:table-cell font-mono text-slate-500 text-[10px]">
+                                {art.article_id || 'N/A'}
+                              </td>
+                              <td className="p-4 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => openArticleInDrawer(art.slug)}
+                                    className="px-2.5 py-1 rounded bg-[#1c1d1f] hover:bg-slate-800 border border-[#3d3d3d] hover:border-slate-500 text-slate-300 hover:text-white transition-all cursor-pointer font-medium"
+                                  >
+                                    Read
+                                  </button>
+                                  {art.source_url && art.source_url !== '#' && (
+                                    <a
+                                      href={art.source_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1 rounded bg-[#1c1d1f] hover:bg-slate-800 border border-[#3d3d3d] hover:text-blue-400 transition-all shrink-0 cursor-pointer"
+                                      title="Open live support URL"
+                                    >
+                                      <LinkIcon className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      {articles.length === 0 && (
+                        <tr>
+                          <td colSpan="5" className="p-8 text-center text-slate-500 italic">
+                            No support documents ingested. Go to the Knowledge Base tab to scrape or upload documents.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
