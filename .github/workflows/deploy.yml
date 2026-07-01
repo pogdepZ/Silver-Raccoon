@@ -3,7 +3,7 @@ name: Deploy to Azure VPS
 on:
   push:
     branches:
-      - code-ui
+      - main
 
 jobs:
   deploy:
@@ -20,7 +20,7 @@ jobs:
           script: |
             cd ~/Silver-Raccoon
             git fetch origin
-            git reset --hard origin/code-ui
+            git reset --hard origin/main
             cd frontend
             npm run build
             cd ..
