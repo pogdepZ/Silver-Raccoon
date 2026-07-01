@@ -249,6 +249,15 @@ function App() {
   const [explorerLoading, setExplorerLoading] = useState(false);
   const [explorerResults, setExplorerResults] = useState(null);
 
+  // --- RAG SYSTEM LOGS (Idea 3) ---
+  const [terminalLogs, setTerminalLogs] = useState([
+    'Welcome to OptiBot System Diagnostics Console v1.2.0',
+    'System Node: azureuser@optibot-vps',
+    'RAG Database Status: ONLINE',
+    'Vector Indexer Status: IDLE (Awaiting operations)',
+    'Start an ingestion to stream diagnostic traces...'
+  ]);
+
   const handleExplorerSubmit = async (e) => {
     e.preventDefault();
     if (!explorerQuery.trim() || explorerLoading) return;
@@ -361,7 +370,9 @@ function App() {
               type: type,
               chunks: 6 + (idx % 4) * 3,
               timestamp: timeStr,
-              status: 'success'
+              status: 'success',
+              source_url: art.source_url || '#',
+              slug: art.slug
             };
           });
           setRecentIngestions(mappedRecent);
@@ -498,10 +509,27 @@ function App() {
     // Reset steps
     setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
 
+    setTerminalLogs(prev => [
+      ...prev,
+      `[${new Date().toLocaleTimeString()}] [INFO] Starting RAG Ingestion pipeline...`,
+      `[${new Date().toLocaleTimeString()}] [INFO] Document: ${docName}`,
+      `[${new Date().toLocaleTimeString()}] [INFO] Type: ${type.toUpperCase()}`,
+      `[${new Date().toLocaleTimeString()}] [DEBUG] Initiating connection to FastAPI backend...`
+    ]);
+
     let currentStepIdx = 0;
     
     // Set first step as processing
     setPipelineSteps(prev => prev.map((s, idx) => idx === 0 ? { ...s, status: 'processing' } : s));
+
+    const logMessages = {
+      0: 'Reading source file and extracting text...',
+      1: 'Removing HTML boilerplate and sanitizing markdown...',
+      2: 'Executing semantic chunking algorithm (max 1000 tokens per chunk)...',
+      3: 'Calling Google Gemini Embeddings API to generate vectors...',
+      4: 'Uploading 1536-dimensional vectors to Vector Index store...',
+      5: 'Ingestion pipeline successfully completed. Syncing state...'
+    };
 
     const visualInterval = setInterval(() => {
       if (currentStepIdx < pipelineSteps.length - 1) {
@@ -510,6 +538,13 @@ function App() {
           if (idx === currentStepIdx + 1) return { ...s, status: 'processing' };
           return s;
         }));
+        
+        const msg = logMessages[currentStepIdx] || 'Processing...';
+        setTerminalLogs(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] [DEBUG] ${msg}`
+        ]);
+        
         currentStepIdx++;
       }
     }, 600);
@@ -550,15 +585,26 @@ function App() {
       setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
       setIsIngesting(false);
 
+      const totalChunks = Math.floor(4 + Math.random() * 15);
+
       // Add to Recent ledger
       const newDoc = {
         name: docName,
         type: type,
-        chunks: Math.floor(4 + Math.random() * 15),
+        chunks: totalChunks,
         timestamp: 'Just now',
-        status: 'success'
+        status: 'success',
+        source_url: type === 'url' ? docName : '#',
+        slug: data.slug || ''
       };
       setRecentIngestions(prev => [newDoc, ...prev]);
+
+      setTerminalLogs(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] [INFO] Status: 200 OK. Slug registered: ${data.slug || 'N/A'}`,
+        `[${new Date().toLocaleTimeString()}] [INFO] Total chunks created: ${totalChunks}`,
+        `[${new Date().toLocaleTimeString()}] [SUCCESS] RAG Ingestion Pipeline completed successfully.`
+      ]);
 
       // Trigger Success Toast
       showToastNotification(`Successfully ingested: ${docName}`, 'success');
@@ -580,6 +626,11 @@ function App() {
         if (idx === currentStepIdx) return { ...s, status: 'failed' };
         return s;
       }));
+
+      setTerminalLogs(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] [ERROR] Ingestion failed: ${error.message}`
+      ]);
       
       showToastNotification(error.message || 'Ingestion failed', 'error');
     }
@@ -689,9 +740,16 @@ function App() {
               <ActivityIcon className="w-4 h-4 text-blue-400" />
               <span>RAG Playground</span>
             </div>
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium text-slate-500 hover:bg-[#2d2d2d]/40 cursor-not-allowed">
-              <TerminalIcon className="w-4 h-4" />
-              <span>Logs</span>
+            <div 
+              onClick={() => setActiveView('logs')}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium cursor-pointer transition-all ${
+                activeView === 'logs' 
+                  ? 'bg-[#2d2d2d] text-white' 
+                  : 'text-slate-400 hover:bg-[#2d2d2d]/50 hover:text-white'
+              }`}
+            >
+              <TerminalIcon className="w-4 h-4 text-green-400" />
+              <span>System Logs</span>
             </div>
           </div>
 
@@ -1124,7 +1182,18 @@ function App() {
 
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {recentIngestions.map((ing, idx) => (
-                  <div key={idx} className="bg-[#191919] p-3 rounded-lg border border-[#3d3d3d] flex flex-col gap-1.5">
+                  <div 
+                    key={idx} 
+                    onClick={() => {
+                      if (ing.source_url && ing.source_url !== '#' && ing.source_url.startsWith('http')) {
+                        window.open(ing.source_url, '_blank');
+                      } else if (ing.slug) {
+                        openArticleInDrawer(ing.slug);
+                      }
+                    }}
+                    className="bg-[#191919] p-3 rounded-lg border border-[#3d3d3d] hover:border-blue-500 hover:bg-[#202123] flex flex-col gap-1.5 cursor-pointer transition-all active:scale-[0.98] select-none"
+                    title={ing.source_url && ing.source_url !== '#' ? `Click to view original link: ${ing.source_url}` : (ing.slug ? "Click to view document content" : ing.name)}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <span className="text-xs font-semibold text-white truncate max-w-[70%]" title={ing.name}>
                         {ing.name}
@@ -1139,7 +1208,6 @@ function App() {
 
                     <div className="flex justify-between items-center text-[10px] text-slate-500 border-t border-[#2d2d2d] pt-1.5">
                       <span>Chunks: <strong className="text-slate-300">{ing.chunks}</strong></span>
-                      <span>{ing.timestamp}</span>
                     </div>
 
                     <div className="flex items-center justify-between text-[9px] mt-0.5">
@@ -1295,6 +1363,61 @@ function App() {
               </div>
             )}
 
+          </div>
+        </main>
+      )}
+
+      {/* 5. SYSTEM DIAGNOSTICS LOGS VIEW (Only shown when activeView === 'logs') */}
+      {activeView === 'logs' && (
+        <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#090b10]">
+          {/* Header */}
+          <header className="p-4 border-b border-[#1b2330] bg-[#0c0f17] shrink-0 flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-white text-base sm:text-lg">System Logs</h2>
+              <p className="text-xs text-slate-500">Live diagnostics and pipeline execution traces</p>
+            </div>
+            <button 
+              onClick={() => setTerminalLogs([
+                `[${new Date().toLocaleTimeString()}] Diagnostics cache cleared.`,
+                'Listening for system operations...'
+              ])}
+              className="text-xs text-red-400 hover:text-red-300 border border-red-900/40 hover:border-red-500/30 px-3 py-1.5 rounded bg-red-950/20 transition-all select-none cursor-pointer"
+            >
+              Clear Logs
+            </button>
+          </header>
+
+          {/* Terminal Console */}
+          <div className="flex-1 p-6 overflow-hidden flex flex-col">
+            <div className="flex-1 bg-black rounded-xl border border-[#1b2330] flex flex-col overflow-hidden shadow-2xl">
+              
+              {/* Terminal Window Header */}
+              <div className="bg-[#0c0f17] px-4 py-2 border-b border-[#1b2330] flex items-center justify-between shrink-0 select-none">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">azureuser@optibot-vps:~/optibot</span>
+                <div className="w-12" />
+              </div>
+
+              {/* Terminal Screen content */}
+              <div className="flex-1 p-5 font-mono text-xs overflow-y-auto space-y-1.5 text-green-500/90 leading-relaxed selection:bg-green-500 selection:text-black">
+                {terminalLogs.map((log, idx) => (
+                  <div key={idx} className="whitespace-pre-wrap font-mono">
+                    <span className="text-[#38bdf8] select-none">$ </span>
+                    {log}
+                  </div>
+                ))}
+                {/* Simulated blinking cursor */}
+                <div className="flex items-center gap-1 font-mono">
+                  <span className="text-[#38bdf8] select-none">$ </span>
+                  <span className="w-2 h-4 bg-green-500 animate-[pulse_1s_infinite]" />
+                </div>
+              </div>
+
+            </div>
           </div>
         </main>
       )}
