@@ -276,14 +276,14 @@
                       <div className="text-slate-400 text-[10px] uppercase">Scraped</div>
                       <div className="text-base font-semibold text-white">{syncStats.total_scraped || 0}</div>
                     </div>
-                    <div class="bg-slate-900/40 p-2 rounded border border-slate-800/40">
+                    <div className="bg-slate-900/40 p-2 rounded border border-slate-800/40">
                       <div className="text-slate-400 text-[10px] uppercase">Added/Upd</div>
                       <div className="text-base font-semibold text-brand-400">{(syncStats.added || 0) + (syncStats.updated || 0)}</div>
                     </div>
                   </div>
                   <div className="text-[11px] text-slate-500 flex justify-between">
-                    <span>Skipped: <strong class="text-slate-300">{syncStats.skipped || 0}</strong></span>
-                    <span>Removed: <strong class="text-slate-300">{syncStats.removed || 0}</strong></span>
+                    <span>Skipped: <strong className="text-slate-300">{syncStats.skipped || 0}</strong></span>
+                    <span>Removed: <strong className="text-slate-300">{syncStats.removed || 0}</strong></span>
                   </div>
                   <div className="text-[10px] text-slate-500 border-t border-slate-800/50 pt-2 flex flex-col gap-0.5">
                     <span className="truncate">Store: <span className="text-slate-300 font-mono text-[9px]">{activeStoreName.split('/').pop()}</span></span>
@@ -343,7 +343,7 @@
                 </div>
                 <div>
                   <h2 className="font-bold text-white">OptiBot Customer Support</h2>
-                  <p class="text-xs text-slate-400 flex items-center gap-1.5">
+                  <p className="text-xs text-slate-400 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
                     Online | Grounded Knowledge Base
                   </p>
