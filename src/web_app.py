@@ -158,6 +158,5 @@ def chat_endpoint(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Gemini API Error: {str(e)}")
 
-# Mount static files (HTML, JS, CSS)
-# If index.html exists in src/static, it will be served at "/"
-app.mount("/", StaticFiles(directory="src/static", html=True), name="static")
+# Mount static files (HTML, JS, CSS) from the compiled React Vite build
+app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
