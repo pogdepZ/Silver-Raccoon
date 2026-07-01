@@ -305,6 +305,14 @@ function App() {
   const [autoReadEnabled, setAutoReadEnabled] = useState(true);
   const [showPresetsSelector, setShowPresetsSelector] = useState(false);
   const [checkedPresets, setCheckedPresets] = useState({});
+
+  // Compute missing preset URLs reactive count
+  const missingPresetsCount = OPTSIGNS_API_PRESETS.filter(preset => {
+    return !articles.some(art => 
+      (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
+    );
+  }).length;
+
   const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem('optibot_chat_messages');
     if (saved) {
@@ -1050,7 +1058,7 @@ function App() {
     if (!urlInput.trim() || isIngesting) return;
     
     const cleaned = urlInput.trim().toLowerCase();
-    const isDuplicate = Object.values(articles).some(art => 
+    const isDuplicate = articles.some(art => 
       (art.source_url || '').toLowerCase() === cleaned
     );
     
@@ -1072,7 +1080,7 @@ function App() {
   const handleSelectAllPresets = () => {
     const allChecked = {};
     OPTSIGNS_API_PRESETS.forEach(p => {
-      const isAlreadyIngested = Object.values(articles).some(art => 
+      const isAlreadyIngested = articles.some(art => 
         (art.source_url || '').toLowerCase() === p.url.toLowerCase()
       );
       if (!isAlreadyIngested) {
@@ -1082,20 +1090,14 @@ function App() {
     setCheckedPresets(allChecked);
   };
 
-  const handleIngestApiPresets = async () => {
-    const urlsToIngest = Object.keys(checkedPresets).filter(url => {
-      if (!checkedPresets[url]) return false;
-      const isAlreadyIngested = Object.values(articles).some(art => 
-        (art.source_url || '').toLowerCase() === url.toLowerCase()
-      );
-      return !isAlreadyIngested;
-    });
-    
+  const triggerBatchIngest = async (urlsToIngest) => {
     if (urlsToIngest.length === 0) return;
     
     setIsIngesting(true);
     setShowPresetsSelector(false);
     
+    // Clear terminal steps and set status
+    setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
     setTerminalLogs(prev => [
       ...prev,
       `[${new Date().toLocaleTimeString()}] [BATCH] Starting batch ingestion of ${urlsToIngest.length} API presets...`,
@@ -1195,6 +1197,27 @@ function App() {
     setIsIngesting(false);
     setCheckedPresets({});
     refreshStatus();
+  };
+
+  const handleIngestApiPresets = () => {
+    const urlsToIngest = Object.keys(checkedPresets).filter(url => {
+      if (!checkedPresets[url]) return false;
+      const isAlreadyIngested = articles.some(art => 
+        (art.source_url || '').toLowerCase() === url.toLowerCase()
+      );
+      return !isAlreadyIngested;
+    });
+    triggerBatchIngest(urlsToIngest);
+  };
+
+  const handleIngestRemainingPresets = () => {
+    const missingUrls = OPTSIGNS_API_PRESETS.filter(preset => {
+      const isAlreadyIngested = articles.some(art => 
+        (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
+      );
+      return !isAlreadyIngested;
+    }).map(preset => preset.url);
+    triggerBatchIngest(missingUrls);
   };
 
   const handleManualIngestion = (e) => {
@@ -1859,7 +1882,7 @@ function App() {
                         <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                           {OPTSIGNS_API_PRESETS.map((preset, idx) => {
                             const isChecked = !!checkedPresets[preset.url];
-                            const isAlreadyIngested = Object.values(articles).some(art => 
+                            const isAlreadyIngested = articles.some(art => 
                               (art.source_url || '').toLowerCase() === preset.url.toLowerCase()
                             );
                             return (
@@ -1896,7 +1919,7 @@ function App() {
                           })}
                         </div>
                         
-                        <div className="flex gap-2 pt-2.5 border-t border-[#2d2d2d]">
+                        <div className="flex gap-2 pt-2.5 border-t border-[#2d2d2d] flex-wrap sm:flex-nowrap">
                           <button
                             type="button"
                             onClick={handleSelectAllPresets}
@@ -1904,6 +1927,17 @@ function App() {
                           >
                             Select All
                           </button>
+                          
+                          <button
+                            type="button"
+                            onClick={handleIngestRemainingPresets}
+                            disabled={isIngesting || missingPresetsCount === 0}
+                            className="flex-1 text-[10px] bg-green-700 hover:bg-green-600 disabled:bg-slate-700 disabled:text-slate-400 text-white py-1.5 rounded-lg font-bold transition-all cursor-pointer border border-green-800/30 shadow-sm"
+                            title="Automatically ingest all presets that are not already in the database"
+                          >
+                            ⚡ Ingest Missing ({missingPresetsCount})
+                          </button>
+
                           <button
                             type="button"
                             onClick={handleIngestApiPresets}
