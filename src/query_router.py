@@ -162,10 +162,19 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
                     if title not in sources:
                         sources.append(title)
         
-        # Veto if RAG query used deactivated resources
+        # Veto if RAG query used deactivated resources - instead of a blunt message,
+        # we fall back to a clean General Knowledge call!
         if is_deactivated_used:
+            general_response = client.models.generate_content(
+                model=model_name,
+                contents=message,
+                config=types.GenerateContentConfig(
+                    system_instruction=GENERAL_SYSTEM_PROMPT,
+                    temperature=0.0,
+                )
+            )
             return {
-                "answer": "The requested support document is currently deactivated in the knowledge base.",
+                "answer": general_response.text or "[No response text generated]",
                 "sources": [],
                 "classification": category
             }

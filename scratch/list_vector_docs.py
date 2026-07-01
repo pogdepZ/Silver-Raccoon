@@ -10,7 +10,7 @@ def list_vector_docs():
                 if "=" in line:
                     key, val = line.strip().split("=", 1)
                     if key.strip() == "GEMINI_API_KEY":
-                        os.environ["GEMINI_API_KEY"] = val.strip().strip('"').strip("'")
+                        os.environ["GEMINI_API_KEY"] = val.strip().strip('                                          "').strip("'")
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:

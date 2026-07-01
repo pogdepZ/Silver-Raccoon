@@ -400,7 +400,12 @@ def rag_explore_endpoint(request: ExploreRequest):
                         })
                         
         if is_deactivated_used:
-            answer = "The requested support document is currently deactivated in the knowledge base."
+            # Fallback to general content generation
+            response = client.models.generate_content(
+                model="gemini-3.1-flash-lite",
+                contents=request.query
+            )
+            answer = response.text or ""
             chunks = []
     else:
         response = client.models.generate_content(

@@ -30,7 +30,10 @@ class TestQueryRouter(unittest.TestCase):
         category = classify_question(self.mock_client, "hi")
         self.assertEqual(category, "UNRELATED")
 
-    def test_handle_query_product_support(self):
+    from unittest.mock import patch
+    @patch("src.query_router.os.path.exists")
+    def test_handle_query_product_support(self, mock_exists):
+        mock_exists.return_value = False
         mock_classify_response = MagicMock()
         mock_classify_response.text = '{"category": "PRODUCT_SUPPORT"}'
 

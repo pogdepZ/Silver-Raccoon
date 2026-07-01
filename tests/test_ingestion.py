@@ -382,7 +382,13 @@ class TestIngestionEndpoints(unittest.TestCase):
         mock_response.candidates = [
             MagicMock(grounding_metadata=MagicMock(grounding_chunks=[mock_chunk]))
         ]
-        mock_client.models.generate_content.return_value = mock_response
+        
+        # Second call is the general knowledge fallback
+        mock_response_general = MagicMock()
+        mock_response_general.text = "This is a fallback general knowledge reply about YouTube."
+        mock_response_general.candidates = None
+        
+        mock_client.models.generate_content.side_effect = [mock_response, mock_response_general]
         mock_client_class.return_value = mock_client
         
         payload = {"query": "How do I configure YouTube?"}
@@ -391,5 +397,5 @@ class TestIngestionEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["classification"], "PRODUCT_SUPPORT")
-        self.assertEqual(data["answer"], "The requested support document is currently deactivated in the knowledge base.")
+        self.assertEqual(data["answer"], "This is a fallback general knowledge reply about YouTube.")
         self.assertEqual(len(data["chunks"]), 0)
