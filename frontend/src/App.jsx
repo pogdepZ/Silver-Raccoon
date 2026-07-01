@@ -163,8 +163,8 @@ const formatMarkdown = (text) => {
   // Convert links [text](url)
   formatted = formatted.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-400 hover:underline inline-flex items-center">$1</a>');
   
-  // Convert raw URLs
-  formatted = formatted.replace(/(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-400 hover:underline">$1</a>');
+  // Convert raw URLs (ignore if inside href="..." or markdown link parentheses)
+  formatted = formatted.replace(/(?<!href=")(?<!\()(https:\/\/support\.optisigns\.com\/hc\/[^\s\)]+)/g, '<a href="$1" target="_blank" class="text-blue-400 hover:underline">$1</a>');
 
   // Convert bullet points
   formatted = formatted.replace(/^\*\s+(.*)$/gm, '<li class="ml-4 list-disc mb-1 text-slate-300">$1</li>');
