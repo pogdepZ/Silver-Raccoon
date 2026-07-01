@@ -39,6 +39,7 @@ class TestQueryRouter(unittest.TestCase):
         
         mock_chunk = MagicMock()
         mock_chunk.retrieved_context.uri = "https://support.optisigns.com/hc/articles/123"
+        mock_chunk.retrieved_context.title = None
         mock_chunk.web = None
         mock_answer_response.candidates = [
             MagicMock(grounding_metadata=MagicMock(grounding_chunks=[mock_chunk]))

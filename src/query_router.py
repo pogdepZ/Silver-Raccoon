@@ -117,7 +117,7 @@ def handle_query(client, message: str, vector_store_name: str, model_name: str =
                 for chunk in metadata.grounding_chunks:
                     title = "Vector Store Chunk"
                     if chunk.retrieved_context:
-                        title = chunk.retrieved_context.uri or "Vector Store Chunk"
+                        title = chunk.retrieved_context.title or chunk.retrieved_context.uri or "Vector Store Chunk"
                     elif chunk.web:
                         title = chunk.web.title or chunk.web.uri
                     if title not in sources:
