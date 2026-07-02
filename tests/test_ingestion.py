@@ -1,6 +1,7 @@
 import os
 import json
 import unittest
+import time
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from src.web_app import app
@@ -30,6 +31,22 @@ class TestIngestionEndpoints(unittest.TestCase):
         os.environ["GEMINI_API_KEY"] = "fake-api-key-123"
 
         self.created_files = []
+
+    def _wait_for_job_done(self, job_id, timeout=5.0):
+        deadline = time.time() + timeout
+        last_job = None
+
+        while time.time() < deadline:
+            response = self.client.get(f"/api/ingest/jobs/{job_id}")
+            self.assertEqual(response.status_code, 200)
+            last_job = response.json()
+
+            if last_job["status"] in {"done", "error"}:
+                return last_job
+
+            time.sleep(0.05)
+
+        self.fail(f"Job {job_id} did not finish in time: {last_job}")
 
     def tearDown(self):
         # Restore state file
@@ -65,9 +82,13 @@ class TestIngestionEndpoints(unittest.TestCase):
         response = self.client.post("/api/ingest/manual", json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["status"], "success")
-        self.assertEqual(data["result"], "added")
+        self.assertEqual(data["status"], "accepted")
+        self.assertIn("job_id", data)
         self.assertTrue("manual-" in data["slug"])
+
+        job = self._wait_for_job_done(data["job_id"])
+        self.assertEqual(job["status"], "done")
+        self.assertEqual(job["result"], "added")
         
         # Verify file was created
         filepath = os.path.join("data/articles", f"{data['slug']}.md")
@@ -100,9 +121,13 @@ class TestIngestionEndpoints(unittest.TestCase):
         response = self.client.post("/api/ingest/url", json=payload)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["status"], "success")
-        self.assertEqual(data["result"], "added")
+        self.assertEqual(data["status"], "accepted")
+        self.assertIn("job_id", data)
         self.assertTrue("url-" in data["slug"])
+
+        job = self._wait_for_job_done(data["job_id"])
+        self.assertEqual(job["status"], "done")
+        self.assertEqual(job["result"], "added")
         
         # Verify file was created
         filepath = os.path.join("data/articles", f"{data['slug']}.md")
@@ -149,9 +174,13 @@ class TestIngestionEndpoints(unittest.TestCase):
         response = self.client.post("/api/ingest/file", files=file_data)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["status"], "success")
-        self.assertEqual(data["result"], "added")
+        self.assertEqual(data["status"], "accepted")
+        self.assertIn("job_id", data)
         self.assertTrue("file-" in data["slug"])
+
+        job = self._wait_for_job_done(data["job_id"])
+        self.assertEqual(job["status"], "done")
+        self.assertEqual(job["result"], "added")
         
         # Verify file was created
         filepath = os.path.join("data/articles", f"{data['slug']}.txt")
@@ -262,73 +291,6 @@ class TestIngestionEndpoints(unittest.TestCase):
         self.assertEqual(len(data["chunks"]), 0)
 
     @patch("src.web_app.AssistantManager")
-    def test_toggle_article_active(self, mock_manager_class):
-        mock_manager = MagicMock()
-        mock_manager.delete_file_from_assistant.return_value = True
-        mock_manager.upload_file_to_vector_store.return_value = "new-document-name-abc"
-        mock_manager_class.return_value = mock_manager
-
-        dummy_slug = "test-article-for-active-toggle"
-        dummy_filepath = "data/articles/test-article-for-active-toggle.md"
-        
-        os.makedirs("data/articles", exist_ok=True)
-        with open(dummy_filepath, "w") as f:
-            f.write("Some dummy markdown text content")
-        self.created_files.append(dummy_filepath)
-
-        with open(self.state_file, "r") as f:
-            state = json.load(f)
-            
-        state["articles"][dummy_slug] = {
-            "title": "Test Toggle Article",
-            "article_id": 999111,
-            "source_url": "https://support.optisigns.com/hc/en-us/articles/999111",
-            "filepath": dummy_filepath,
-            "document_name": "fileSearchStores/test-store-123/documents/doc-abc-123",
-            "active": True
-        }
-        
-        with open(self.state_file, "w") as f:
-            json.dump(state, f)
-
-        # 1. DEACTIVATE IT
-        response = self.client.post(f"/api/articles/{dummy_slug}/toggle-active")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "success")
-        self.assertEqual(data["active"], False)
-        
-        mock_manager.delete_file_from_assistant.assert_called_with("fileSearchStores/test-store-123/documents/doc-abc-123")
-        
-        with open(self.state_file, "r") as f:
-            state = json.load(f)
-            self.assertEqual(state["articles"][dummy_slug]["active"], False)
-            self.assertIsNone(state["articles"][dummy_slug]["document_name"])
-
-        # 2. REACTIVATE IT
-        response = self.client.post(f"/api/articles/{dummy_slug}/toggle-active")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "success")
-        self.assertEqual(data["active"], True)
-        
-        mock_manager.upload_file_to_vector_store.assert_called_with(
-            dummy_filepath,
-            "fileSearchStores/test-store-123",
-            {
-                "article_id": 999111,
-                "title": "Test Toggle Article",
-                "source_url": "https://support.optisigns.com/hc/en-us/articles/999111",
-                "slug": dummy_slug
-            }
-        )
-        
-        with open(self.state_file, "r") as f:
-            state = json.load(f)
-            self.assertEqual(state["articles"][dummy_slug]["active"], True)
-            self.assertEqual(state["articles"][dummy_slug]["document_name"], "new-document-name-abc")
-
-    @patch("src.web_app.AssistantManager")
     def test_delete_article(self, mock_manager_class):
         mock_manager = MagicMock()
         mock_manager.delete_file_from_assistant.return_value = True
@@ -405,12 +367,7 @@ class TestIngestionEndpoints(unittest.TestCase):
             MagicMock(grounding_metadata=MagicMock(grounding_chunks=[mock_chunk]))
         ]
         
-        # Second call is the general knowledge fallback
-        mock_response_general = MagicMock()
-        mock_response_general.text = "This is a fallback general knowledge reply about YouTube."
-        mock_response_general.candidates = None
-        
-        mock_client.models.generate_content.side_effect = [mock_response, mock_response_general]
+        mock_client.models.generate_content.return_value = mock_response
         mock_client_class.return_value = mock_client
         
         payload = {"query": "How do I configure YouTube?"}
@@ -419,5 +376,5 @@ class TestIngestionEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["classification"], "PRODUCT_SUPPORT")
-        self.assertEqual(data["answer"], "This is a fallback general knowledge reply about YouTube.")
-        self.assertEqual(len(data["chunks"]), 0)
+        self.assertEqual(data["answer"], "This is a detailed guide on how to add YouTube...")
+        self.assertEqual(len(data["chunks"]), 1)

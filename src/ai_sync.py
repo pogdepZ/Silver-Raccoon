@@ -2,57 +2,18 @@ import json
 import os
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError
 
 load_dotenv()
 
-SYSTEM_PROMPT = (
-    "You are OptiBot, a retrieval-based customer support assistant for OptiSigns.\n\n"
-    "You operate ONLY on retrieved knowledge base documents.\n\n"
-    "========================\n"
-    "CORE RULE (MOST IMPORTANT)\n"
-    "========================\n"
-    "You MUST treat OptiSigns features as STRICTLY SEPARATE PRODUCTS.\n\n"
-    "Do NOT mix or confuse different features even if keywords are similar.\n\n"
-    "Examples of DISTINCT features:\n"
-    "- YouTube Video (play/embed video content)\n"
-    "- YouTube Dashboard (analytics/reporting via Looker Studio)\n"
-    "- Screens management\n"
-    "- Playlists\n"
-    "- Scheduling\n\n"
-    "Each feature must be treated independently.\n\n"
-    "========================\n"
-    "RETRIEVAL USAGE RULE\n"
-    "========================\n"
-    "1. Only use retrieved context.\n"
-    "2. If retrieved context does not EXACTLY match the user intent, ignore it.\n"
-    "3. Do NOT partially match similar topics.\n\n"
-    "Example:\n"
-    "User: \"How do I add a YouTube video?\"\n"
-    "❌ DO NOT use:\n"
-    "- YouTube Dashboard\n"
-    "- Analytics / Looker Studio\n"
-    "- Reporting tools\n\n"
-    "✔ ONLY use:\n"
-    "- YouTube video playback / embed / app setup docs\n\n"
-    "========================\n"
-    "ANSWER RULES\n"
-    "========================\n"
-    "- Max 5 bullet points\n"
-    "- Step-by-step instructions only\n"
-    "- No speculation\n"
-    "- No combining multiple features in one answer\n"
-    "- Always include up to 3 Article URLs if available\n\n"
-    "========================\n"
-    "FAIL SAFE\n"
-    "========================\n"
-    "If no exact-match document exists:\n"
-    "Respond:\n"
-    "\"I could not find relevant documentation for this request in the OptiSigns help center.\""
-)
+# Max retries and initial delay for upload/delete API calls
+_UPLOAD_MAX_RETRIES = 3
+_UPLOAD_RETRY_DELAY = 2  # seconds, doubled each retry
 
 
 class AssistantManager:
@@ -61,6 +22,7 @@ class AssistantManager:
         self.state_file = state_file
         self.state = self._load_state()
         self.lock = threading.Lock()
+        self._dirty = False  # True when in-memory state has unsaved changes
 
     def _load_state(self):
         if os.path.exists(self.state_file):
@@ -77,8 +39,15 @@ class AssistantManager:
         }
 
     def save_state(self):
+        """Persist in-memory state to disk. Call this explicitly after batch operations."""
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(self.state, f, indent=2)
+        self._dirty = False
+
+    def save_state_if_dirty(self):
+        """Only write to disk if state has changed since last save."""
+        if self._dirty:
+            self.save_state()
 
     def get_or_create_vector_store(self, display_name="OptiSigns Help Center KB"):
         store_name = self.state.get("file_search_store_name")
@@ -110,38 +79,87 @@ class AssistantManager:
         self.save_state()
         return self.state["model"]
 
-    def _wait_for_operation(self, operation, timeout_seconds=300, poll_seconds=5):
-        deadline = time.time() + timeout_seconds
+    def _wait_for_operation(self, operation, timeout_seconds=300, poll_seconds=5, max_poll_seconds=15):
+        """
+        Poll until the operation is done.
+        Uses progressive backoff: poll interval increases gradually up to max_poll_seconds.
+        Prints a single summary line with elapsed time instead of spamming per-poll.
+        """
+        start = time.time()
+        deadline = start + timeout_seconds
+        interval = poll_seconds
+
         while not getattr(operation, "done", False):
+            elapsed = time.time() - start
             if time.time() >= deadline:
-                raise TimeoutError(f"Gemini upload operation timed out: {operation.name}")
-            print(f"Waiting for Gemini upload operation: {operation.name}")
-            time.sleep(poll_seconds)
+                raise TimeoutError(
+                    f"Gemini upload operation timed out after {elapsed:.0f}s: {operation.name}"
+                )
+            print(f"  ⏳ Indexing... {elapsed:.0f}s elapsed ({operation.name.split('/')[-1]})")
+            time.sleep(interval)
+            # Progressive backoff: grow interval up to max_poll_seconds
+            interval = min(interval + 2, max_poll_seconds)
             operation = self.client.operations.get(operation)
 
+        elapsed = time.time() - start
         if getattr(operation, "error", None):
             raise RuntimeError(f"Gemini upload operation failed: {operation.error}")
+
+        print(f"  ✅ Indexed in {elapsed:.0f}s")
         return operation
 
     def upload_file_to_vector_store(self, filepath, vector_store_id, metadata=None):
+        """
+        Upload a file to the Gemini File Search Store with retry + exponential backoff.
+        Retries on transient API errors (429, 5xx). Raises on permanent failure.
+        """
         metadata = metadata or {}
         custom_metadata = [
             types.CustomMetadata(key="slug", string_value=str(metadata.get("slug", ""))),
             types.CustomMetadata(key="source_url", string_value=str(metadata.get("source_url", ""))),
             types.CustomMetadata(key="article_id", string_value=str(metadata.get("article_id", ""))),
         ]
-        print(f"Uploading file to Gemini File Search Store: {filepath}")
-        operation = self.client.file_search_stores.upload_to_file_search_store(
-            file_search_store_name=vector_store_id,
-            file=filepath,
-            config=types.UploadToFileSearchStoreConfig(
-                display_name=os.path.basename(filepath),
-                mime_type="text/markdown",
-                custom_metadata=custom_metadata,
-            ),
-        )
-        operation = self._wait_for_operation(operation)
-        return operation.response.document_name
+
+        delay = _UPLOAD_RETRY_DELAY
+        last_exc = None
+
+        for attempt in range(_UPLOAD_MAX_RETRIES):
+            try:
+                print(f"Uploading file to Gemini File Search Store: {filepath}"
+                      + (f" (attempt {attempt + 1})" if attempt > 0 else ""))
+                operation = self.client.file_search_stores.upload_to_file_search_store(
+                    file_search_store_name=vector_store_id,
+                    file=filepath,
+                    config=types.UploadToFileSearchStoreConfig(
+                        display_name=os.path.basename(filepath),
+                        mime_type="text/markdown",
+                        custom_metadata=custom_metadata,
+                    ),
+                )
+                operation = self._wait_for_operation(operation)
+                return operation.response.document_name
+
+            except APIError as e:
+                last_exc = e
+                # Retry on rate-limit (429) or server errors (5xx)
+                code = getattr(e, "code", None)
+                if code in (429, 500, 502, 503, 504) and attempt < _UPLOAD_MAX_RETRIES - 1:
+                    print(f"Upload API error {code} for {filepath}, retrying in {delay}s...")
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise
+
+            except Exception as e:
+                last_exc = e
+                if attempt < _UPLOAD_MAX_RETRIES - 1:
+                    print(f"Upload error for {filepath}: {e}, retrying in {delay}s...")
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise
+
+        raise RuntimeError(f"Upload failed after {_UPLOAD_MAX_RETRIES} attempts: {last_exc}")
 
     def delete_file_from_assistant(self, document_name):
         try:
@@ -194,6 +212,11 @@ class AssistantManager:
         return last_counts
 
     def sync_article(self, slug, filepath, content_hash, vector_store_id, metadata=None):
+        """
+        Sync a single article to the vector store.
+        Updates in-memory state immediately (thread-safe) but does NOT write to disk.
+        Call save_state() once after all sync tasks complete for best performance.
+        """
         with self.lock:
             article_state = self.state["articles"].get(slug)
         metadata = metadata or {}
@@ -208,7 +231,7 @@ class AssistantManager:
                     "filepath": filepath,
                     **metadata,
                 }
-                self.save_state()
+                self._dirty = True
             return "added"
 
         if article_state.get("hash") != content_hash:
@@ -224,22 +247,40 @@ class AssistantManager:
                     "filepath": filepath,
                     **metadata,
                 }
-                self.save_state()
+                self._dirty = True
             return "updated"
 
         return "skipped"
 
-    def clean_removed_articles(self, current_slugs):
-        removed_count = 0
-        for slug in list(self.state["articles"].keys()):
-            if slug not in current_slugs:
-                print(f"Article {slug} removed from source. Cleaning up from Gemini.")
-                document_name = self.state["articles"][slug].get("document_name")
-                if document_name:
-                    self.delete_file_from_assistant(document_name)
-                del self.state["articles"][slug]
-                removed_count += 1
+    def clean_removed_articles(self, current_slugs, max_workers=8):
+        """
+        Delete articles that no longer exist in the source.
+        Uses a thread pool for parallel deletion.
+        Updates in-memory state but does NOT write to disk — call save_state() after.
+        """
+        slugs_to_remove = [
+            slug for slug in list(self.state["articles"].keys())
+            if slug not in current_slugs
+        ]
 
-        if removed_count > 0:
-            self.save_state()
-        return removed_count
+        if not slugs_to_remove:
+            return 0
+
+        def _delete_one(slug):
+            print(f"Article {slug} removed from source. Cleaning up from Gemini.")
+            document_name = self.state["articles"][slug].get("document_name")
+            if document_name:
+                self.delete_file_from_assistant(document_name)
+            with self.lock:
+                self.state["articles"].pop(slug, None)
+                self._dirty = True
+
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(slugs_to_remove))) as executor:
+            futures = [executor.submit(_delete_one, slug) for slug in slugs_to_remove]
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    print(f"Warning: Error during article cleanup: {e}")
+
+        return len(slugs_to_remove)

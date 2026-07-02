@@ -273,7 +273,8 @@ function App() {
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
   const [testsRunning, setTestsRunning] = useState(false);
   const [testResults, setTestResults] = useState(null); // null, 'running', 'success', 'failed'
-  const [togglingSlugs, setTogglingSlugs] = useState({}); // slug -> 'toggling' | 'deleting' | null
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const [ttsLanguage, setTtsLanguage] = useState('auto'); // 'auto', 'en-US', 'vi-VN'
   const [ttsRate, setTtsRate] = useState(1.0); // 0.5 to 2.0
   const [ttsPitch, setTtsPitch] = useState(1.0); // 0.5 to 1.5
@@ -423,6 +424,7 @@ function App() {
   const [manualTitle, setManualTitle] = useState('');
   const [manualContent, setManualContent] = useState('');
   const [isIngesting, setIsIngesting] = useState(false);
+  const [currentIngestJob, setCurrentIngestJob] = useState(null);
   
   // Pipeline steps state
   const [pipelineSteps, setPipelineSteps] = useState([
@@ -556,40 +558,13 @@ function App() {
     showToastNotification('Chat history cleared', 'success');
   };
 
-  const toggleArticleActive = async (slug) => {
-    setTogglingSlugs(prev => ({ ...prev, [slug]: 'toggling' }));
-    try {
-      const res = await fetch(`/api/articles/${encodeURIComponent(slug)}/toggle-active`, {
-        method: 'POST'
-      });
-      if (!res.ok) {
-        throw new Error('Failed to toggle article state');
-      }
-      const data = await res.json();
-      
-      setArticles(prev => prev.map(art => {
-        if (art.slug === slug) {
-          return { ...art, active: data.active };
-        }
-        return art;
-      }));
-      
-      showToastNotification(`Article status updated to: ${data.active ? 'ACTIVE' : 'INACTIVE'}`, 'success');
-    } catch (e) {
-      console.error(e);
-      showToastNotification('Failed to toggle article status', 'error');
-    } finally {
-      setTogglingSlugs(prev => ({ ...prev, [slug]: null }));
-    }
-  };
 
   const deleteArticle = async (slug) => {
     if (!window.confirm("Are you sure you want to permanently delete this article from RAG and local storage?")) {
       return;
     }
     
-    setTogglingSlugs(prev => ({ ...prev, [slug]: 'deleting' }));
-    
+    setIsDeleting(true);
     try {
       const res = await fetch(`/api/articles/${encodeURIComponent(slug)}`, {
         method: 'DELETE'
@@ -604,7 +579,7 @@ function App() {
       console.error(e);
       showToastNotification('Failed to delete article', 'error');
     } finally {
-      setTogglingSlugs(prev => ({ ...prev, [slug]: null }));
+      setIsDeleting(false);
     }
   };
 
@@ -907,10 +882,51 @@ function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  const waitForIngestJob = async (jobId, onStatusChange) => {
+    const deadline = Date.now() + 5 * 60 * 1000;
+    let lastStatus = null;
+
+    while (Date.now() < deadline) {
+      const res = await fetch(`/api/ingest/jobs/${jobId}`);
+      if (!res.ok) {
+        let errMsg = `Failed to poll ingest job (${res.status})`;
+        try {
+          const errData = await res.json();
+          errMsg = errData.detail || errMsg;
+        } catch (jsonErr) {
+          try {
+            const text = await res.text();
+            errMsg = text || errMsg;
+          } catch (txtErr) {
+            errMsg = errMsg;
+          }
+        }
+        throw new Error(errMsg);
+      }
+
+      const job = await res.json();
+      if (job.status !== lastStatus) {
+        lastStatus = job.status;
+        if (onStatusChange) {
+          onStatusChange(job);
+        }
+      }
+
+      if (job.status === 'done' || job.status === 'error') {
+        return job;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    throw new Error('Timed out waiting for background ingestion job');
+  };
+
   // --- Ingestion Pipeline Simulator ---
   // --- Ingestion Pipeline Simulator ---
   const runIngestionPipeline = async (docName, type, payload = null) => {
     setIsIngesting(true);
+    setCurrentIngestJob({ jobId: null, status: 'starting', label: docName, type });
     
     // Reset steps
     setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
@@ -999,8 +1015,45 @@ function App() {
 
       const data = await res.json();
 
+      if (data.status !== 'accepted' || !data.job_id) {
+        throw new Error('Unexpected ingest response from server');
+      }
+
+      setCurrentIngestJob({ jobId: data.job_id, status: 'accepted', label: docName, type });
+
+      setTerminalLogs(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] [INFO] Ingest request accepted. Job ID: ${data.job_id}`,
+        `[${new Date().toLocaleTimeString()}] [INFO] Background Gemini upload started...`
+      ]);
+
+      setPipelineSteps(prev => prev.map((s, idx) => {
+        if (idx === prev.length - 1) return { ...s, status: 'processing' };
+        return s;
+      }));
+
+      const job = await waitForIngestJob(data.job_id, (jobState) => {
+        setCurrentIngestJob({
+          jobId: data.job_id,
+          status: jobState.status,
+          label: docName,
+          type
+        });
+        if (jobState.status === 'uploading') {
+          setTerminalLogs(prev => [
+            ...prev,
+            `[${new Date().toLocaleTimeString()}] [DEBUG] Gemini upload is still running...`
+          ]);
+        }
+      });
+
+      if (job.status === 'error') {
+        throw new Error(job.error || 'Background ingestion failed');
+      }
+
       // All completed successfully
       setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+      setCurrentIngestJob({ jobId: data.job_id, status: 'done', label: docName, type });
       setIsIngesting(false);
 
       const totalChunks = Math.floor(4 + Math.random() * 15);
@@ -1037,6 +1090,7 @@ function App() {
       refreshStatus();
     } catch (error) {
       clearInterval(visualInterval);
+      setCurrentIngestJob(prev => prev ? { ...prev, status: 'error' } : prev);
       setIsIngesting(false);
       
       // Mark current step as failed
@@ -1124,6 +1178,7 @@ function App() {
     if (urlsToIngest.length === 0) return;
     
     setIsIngesting(true);
+    setCurrentIngestJob({ jobId: null, status: 'starting', label: 'Batch ingest', type: 'batch' });
     setShowPresetsSelector(false);
     
     // Clear terminal steps and set status
@@ -1152,7 +1207,7 @@ function App() {
       
       let currentStepIdx = 0;
       const visualInterval = setInterval(() => {
-        if (currentStepIdx < 5) {
+        if (currentStepIdx < pipelineSteps.length - 1) {
           setPipelineSteps(prev => prev.map((s, idx) => {
             if (idx === currentStepIdx) return { ...s, status: 'done' };
             if (idx === currentStepIdx + 1) return { ...s, status: 'processing' };
@@ -1189,6 +1244,30 @@ function App() {
         }
         
         const data = await res.json();
+
+        if (data.status !== 'accepted' || !data.job_id) {
+          throw new Error('Unexpected ingest response from server');
+        }
+
+        setCurrentIngestJob({ jobId: data.job_id, status: 'accepted', label, type: 'url' });
+
+        setTerminalLogs(prev => [
+          ...prev,
+          `\n[${new Date().toLocaleTimeString()}] [BATCH] Accepted job ${data.job_id} for ${label}, polling background index status...`
+        ]);
+
+        setPipelineSteps(prev => prev.map((s, idx) => {
+          if (idx === prev.length - 1) return { ...s, status: 'processing' };
+          return s;
+        }));
+
+        const job = await waitForIngestJob(data.job_id);
+
+        setCurrentIngestJob({ jobId: data.job_id, status: job.status, label, type: 'url' });
+
+        if (job.status === 'error') {
+          throw new Error(job.error || 'Background ingestion failed');
+        }
         
         // Mark all steps as done
         setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
@@ -1214,6 +1293,7 @@ function App() {
         await new Promise(resolve => setTimeout(resolve, 800));
       } catch (err) {
         clearInterval(visualInterval);
+        setCurrentIngestJob(prev => prev ? { ...prev, status: 'error' } : prev);
         
         // Mark remaining steps as failed
         setPipelineSteps(prev => prev.map((s, idx) => {
@@ -1237,6 +1317,7 @@ function App() {
     ]);
     
     setIsIngesting(false);
+    setCurrentIngestJob(null);
     setCheckedPresets({});
     refreshStatus();
   };
@@ -2041,9 +2122,26 @@ function App() {
               </div>
 
               {/* Ingestion Progress Monitor Card */}
-              {(isIngesting || pipelineSteps.some(s => s.status === 'done')) && (
+                {(isIngesting || pipelineSteps.some(s => s.status === 'done')) && (
                 <div className="bg-[#2d2d2d] rounded-xl border border-[#3d3d3d] p-5 shadow-md">
                   <h3 className="text-sm font-semibold text-white mb-3">RAG Ingestion Pipeline Status</h3>
+                    {currentIngestJob && (
+                      <div className="mb-3 rounded-lg border border-[#3d3d3d] bg-[#191919] px-3 py-2 text-[11px] text-slate-300 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${currentIngestJob.status === 'done' ? 'bg-green-500' : currentIngestJob.status === 'error' ? 'bg-red-500' : currentIngestJob.status === 'uploading' ? 'bg-blue-500 animate-pulse' : 'bg-amber-500 animate-pulse'}`} />
+                          <span className="truncate">
+                            {currentIngestJob.status === 'accepted' && 'Accepted, polling background job'}
+                            {currentIngestJob.status === 'starting' && 'Starting ingest request...'}
+                            {currentIngestJob.status === 'uploading' && 'Uploading to Gemini in background...'}
+                            {currentIngestJob.status === 'done' && 'Background job completed'}
+                            {currentIngestJob.status === 'error' && 'Background job failed'}
+                          </span>
+                        </div>
+                        {currentIngestJob.jobId && (
+                          <span className="text-slate-500 font-mono shrink-0">{currentIngestJob.jobId.slice(0, 8)}</span>
+                        )}
+                      </div>
+                    )}
                   <div className="space-y-3">
                     {pipelineSteps.map((step) => {
                       return (
@@ -2201,15 +2299,10 @@ function App() {
                   <div className="flex-1 overflow-y-auto space-y-4 pr-1">
                     {explorerResults.chunks && explorerResults.chunks.length > 0 ? (
                       explorerResults.chunks.map((chunk, cIdx) => {
-                        const targetArt = articles.find(a => a.slug === chunk.slug);
-                        const isInactive = targetArt && targetArt.active === false;
-                        
                         return (
                           <div 
                             key={cIdx} 
-                            className={`bg-[#191919] p-4 rounded-xl border space-y-3 transition-opacity ${
-                              isInactive ? 'opacity-50 border-red-950 bg-red-950/5' : 'border-[#3d3d3d]'
-                            }`}
+                            className="bg-[#191919] p-4 rounded-xl border border-[#3d3d3d] space-y-3"
                           >
                             <div className="flex items-center justify-between text-xs border-b border-[#2d2d2d] pb-2">
                               <div className="flex items-center gap-2">
@@ -2221,11 +2314,6 @@ function App() {
                                   <BookOpenIcon className="w-3.5 h-3.5 text-blue-400" />
                                   <span>{chunk.title}</span>
                                 </button>
-                                {isInactive && (
-                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-950 text-red-400 font-bold uppercase select-none border border-red-900/30">
-                                    Deactivated
-                                  </span>
-                                )}
                               </div>
                               <div className="flex items-center gap-2">
                                 <span className="text-[10px] text-slate-500 font-mono">Relevance Score</span>
@@ -2234,6 +2322,7 @@ function App() {
                                 </span>
                               </div>
                             </div>
+
                             
                             {/* Similarity indicator bar */}
                             <div className="w-full bg-[#2d2d2d] h-1.5 rounded-full overflow-hidden">
@@ -2462,7 +2551,6 @@ function App() {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="border-b border-[#3d3d3d] bg-[#1c1d1f] text-slate-400 text-[10px] font-bold uppercase tracking-wider select-none">
-                        <th className="p-4 w-12 text-center">RAG</th>
                         <th className="p-4">Title</th>
                         <th className="p-4 hidden sm:table-cell">Source Type</th>
                         <th className="p-4 hidden md:table-cell">ID</th>
@@ -2473,44 +2561,13 @@ function App() {
                       {articles
                         .filter(art => art.title.toLowerCase().includes(articleSearchQuery.toLowerCase()))
                         .map((art, idx) => {
-                          const isInactive = art.active === false;
                           return (
-                            <tr 
-                              key={idx} 
-                              className={`hover:bg-[#2c2d30]/30 transition-colors ${
-                                isInactive ? 'text-slate-500 bg-[#1e1e1e]/10' : ''
-                              }`}
-                            >
-                              <td className="p-4 text-center">
-                                {togglingSlugs[art.slug] === 'toggling' ? (
-                                  <div className="w-4 h-4 mx-auto rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleArticleActive(art.slug)}
-                                    disabled={!!togglingSlugs[art.slug]}
-                                    className={`w-4 h-4 mx-auto rounded flex items-center justify-center border transition-all cursor-pointer ${
-                                      art.active !== false
-                                        ? 'bg-blue-600 border-blue-500 hover:bg-blue-700'
-                                        : 'bg-transparent border-[#4d4d4d] hover:border-slate-500'
-                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                                    title={art.active !== false ? "Click to deactivate this article" : "Click to activate this article"}
-                                  >
-                                    {art.active !== false && (
-                                      <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="4">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    )}
-                                  </button>
-                                )}
-                              </td>
+                            <tr key={idx} className="hover:bg-[#2c2d30]/30 transition-colors">
                               <td className="p-4">
                                 <div className="flex flex-col gap-0.5 max-w-md sm:max-w-xl">
                                   <button
                                     onClick={() => openArticleInDrawer(art.slug)}
-                                    className={`text-left font-medium hover:text-blue-400 hover:underline cursor-pointer truncate ${
-                                      isInactive ? 'line-through text-slate-600' : 'text-slate-200'
-                                    }`}
+                                    className="text-left font-medium hover:text-blue-400 hover:underline cursor-pointer truncate text-slate-200"
                                   >
                                     {art.title}
                                   </button>
@@ -2554,11 +2611,11 @@ function App() {
                                   )}
                                   <button
                                     onClick={() => deleteArticle(art.slug)}
-                                    disabled={!!togglingSlugs[art.slug]}
+                                    disabled={isDeleting}
                                     className="p-1 rounded bg-[#1c1d1f] hover:bg-red-950/40 border border-[#3d3d3d] hover:border-red-900/50 text-slate-400 hover:text-red-400 transition-all shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     title="Delete article permanently from system"
                                   >
-                                    {togglingSlugs[art.slug] === 'deleting' ? (
+                                    {isDeleting ? (
                                       <div className="w-3.5 h-3.5 rounded-full border-2 border-red-500 border-t-transparent animate-spin" />
                                     ) : (
                                       <TrashIcon className="w-3.5 h-3.5" />

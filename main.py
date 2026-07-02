@@ -108,9 +108,14 @@ def main():
             except Exception as e:
                 print(f"[{idx+1}/{len(articles)}] ERROR syncing article {slug}: {e}")
             
-    # 5. Clean up removed articles
+    # 5. Flush all in-memory state changes to disk in one write
+    manager.save_state_if_dirty()
+    print(f"State saved: {added_count} added, {updated_count} updated, {skipped_count} skipped.")
+
+    # Clean up removed articles (parallel delete) then save again if needed
     print("Checking for deleted articles...")
     removed_count = manager.clean_removed_articles(current_slugs)
+    manager.save_state_if_dirty()
     print("Waiting for Gemini File Search indexing to finish...")
     vector_store_file_counts = manager.wait_for_vector_store_files(vs_id)
     summary = {

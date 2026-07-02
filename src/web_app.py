@@ -1,7 +1,9 @@
 import os
 import sys
 import json
-from fastapi import FastAPI, HTTPException, UploadFile, File
+import threading
+import uuid
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -16,6 +18,19 @@ from src.query_router import handle_query, classify_question, PRODUCT_SUPPORT_SY
 from src.ai_sync import AssistantManager
 
 load_dotenv()
+
+# -------------------------------------------------------
+# In-memory job store for background ingest tasks
+# job_id -> { status, slug, title, error, result }
+# -------------------------------------------------------
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+
+def _set_job(job_id: str, **kwargs):
+    with _jobs_lock:
+        if job_id not in _jobs:
+            _jobs[job_id] = {}
+        _jobs[job_id].update(kwargs)
 
 app = FastAPI(title="OptiBot Web Console")
 
@@ -100,17 +115,15 @@ def get_status():
                         "article_id": meta.get("article_id"),
                         "source_url": meta.get("source_url", ""),
                         "updated_at": meta.get("updated_at", ""),
-                        "synced_at": meta.get("synced_at", meta.get("updated_at", "")),
-                        "active": meta.get("active", True)
+                        "synced_at": meta.get("synced_at", meta.get("updated_at", ""))
                     })
         except Exception:
             pass
             
     # Calculate live database stats dynamically from state
-    active_count = sum(1 for a in articles if a.get("active", True))
     live_stats = {
         "total_scraped": len(articles),
-        "added": active_count,
+        "added": len(articles),
         "skipped": sync_log.get("skipped", 0),
         "removed": sync_log.get("removed", 0),
         "completed_at": sync_log.get("completed_at", "")
@@ -246,62 +259,7 @@ def get_article_content(slug: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read article content: {str(e)}")
 
-@app.post("/api/articles/{slug:path}/toggle-active")
-def toggle_article_active(slug: str):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
-        
-    state_path = "gemini_state.json"
-    if not os.path.exists(state_path):
-        raise HTTPException(status_code=400, detail="Sync state file not found.")
-        
-    try:
-        with open(state_path, "r", encoding="utf-8") as f:
-            state = json.load(f)
-            
-        articles = state.get("articles", {})
-        if slug not in articles:
-            raise HTTPException(status_code=404, detail="Article not found in state.")
-            
-        current_active = articles[slug].get("active", True)
-        new_active = not current_active
-        
-        manager = AssistantManager(api_key=api_key)
-        vector_store_name = state.get("file_search_store_name")
-        if not vector_store_name:
-            raise HTTPException(status_code=400, detail="Vector store not initialized in state.")
-            
-        if not new_active:
-            # DEACTIVATE: Delete from vector store instantly
-            doc_name = articles[slug].get("document_name")
-            if doc_name:
-                manager.delete_file_from_assistant(doc_name)
-                articles[slug]["document_name"] = None
-        else:
-            # ACTIVATE: Re-upload to vector store
-            filepath = articles[slug].get("filepath")
-            if filepath and os.path.exists(filepath):
-                metadata = {
-                    "article_id": articles[slug].get("article_id"),
-                    "title": articles[slug].get("title"),
-                    "source_url": articles[slug].get("source_url"),
-                    "slug": slug,
-                }
-                new_doc_name = manager.upload_file_to_vector_store(filepath, vector_store_name, metadata)
-                articles[slug]["document_name"] = new_doc_name
-                
-        articles[slug]["active"] = new_active
-        state["articles"] = articles
-        
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
-            
-        return {"status": "success", "slug": slug, "active": new_active}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to toggle article state: {str(e)}")
+
 
 @app.delete("/api/articles/{slug:path}")
 def delete_article(slug: str):
@@ -420,41 +378,18 @@ def rag_explore_endpoint(request: ExploreRequest):
     if not vector_store_name:
         raise HTTPException(status_code=400, detail="Vector Store not initialized")
 
-    inactive_slugs = []
-    try:
-        articles = state.get("articles", {})
-        for slug, meta in articles.items():
-            if not meta.get("active", True):
-                inactive_slugs.append(slug)
-    except Exception:
-        pass
-
-    client = genai.Client()
+    client = genai.Client(api_key=api_key)
     category = classify_question(client, request.query)
-    
+
     chunks = []
     answer = "[No grounding chunks retrieved]"
-    is_deactivated_used = False
-    
-    if category == "PRODUCT_SUPPORT":
-        # Build custom prompt with exclusions if needed
-        custom_prompt = PRODUCT_SUPPORT_SYSTEM_PROMPT
-        if inactive_slugs:
-            exclusions = []
-            for slug in inactive_slugs:
-                exclusions.append(f'- Slug: "{slug}"')
-            custom_prompt += (
-                f"\n\nCRITICAL RULE: The following support articles are currently DEACTIVATED: \n"
-                f"{chr(10).join(exclusions)}\n"
-                f"You MUST NOT use any information from these documents to answer queries. "
-                f"If the query is related to them, reply that the document is currently deactivated."
-            )
 
+    if category == "PRODUCT_SUPPORT":
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite",
             contents=request.query,
             config=types.GenerateContentConfig(
-                system_instruction=custom_prompt,
+                system_instruction=PRODUCT_SUPPORT_SYSTEM_PROMPT,
                 tools=[
                     types.Tool(
                         file_search=types.FileSearch(
@@ -466,7 +401,7 @@ def rag_explore_endpoint(request: ExploreRequest):
             )
         )
         answer = response.text or ""
-        
+
         if response.candidates and response.candidates[0].grounding_metadata:
             metadata = response.candidates[0].grounding_metadata
             if metadata.grounding_chunks:
@@ -474,26 +409,19 @@ def rag_explore_endpoint(request: ExploreRequest):
                     if chunk.retrieved_context:
                         text_content = chunk.retrieved_context.text or ""
                         title = chunk.retrieved_context.title or "Vector Store Chunk"
-                        uri = chunk.retrieved_context.uri or ""
-                        
+
                         score = calculate_similarity(request.query, text_content)
-                        
+
                         slug = None
                         if chunk.retrieved_context.custom_metadata:
                             for meta in chunk.retrieved_context.custom_metadata:
                                 if meta.key == "slug":
                                     slug = meta.string_value
                                     break
-                                    
+
                         if not slug:
                             slug = title.replace(".md", "").replace(".txt", "")
-                            
-                        # Match slug, title, or uri against inactive list
-                        for s in inactive_slugs:
-                            if s == slug or s in title or s in uri:
-                                is_deactivated_used = True
-                                break
-                                
+
                         chunks.append({
                             "chunk_index": idx,
                             "title": title,
@@ -501,15 +429,6 @@ def rag_explore_endpoint(request: ExploreRequest):
                             "text": text_content[:500] + "..." if len(text_content) > 500 else text_content,
                             "similarity_score": round(score, 4)
                         })
-                        
-        if is_deactivated_used:
-            # Fallback to general content generation
-            response = client.models.generate_content(
-                model="gemini-3.1-flash-lite",
-                contents=request.query
-            )
-            answer = response.text or ""
-            chunks = []
     else:
         response = client.models.generate_content(
             model="gemini-3.1-flash-lite",
@@ -566,89 +485,102 @@ def chat_endpoint(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to query assistant: {str(e)}")
 
+@app.get("/api/ingest/jobs/{job_id}")
+def get_ingest_job_status(job_id: str):
+    """Poll the status of a background ingest job."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
 class ManualIngestRequest(BaseModel):
     title: str
     content: str
 
 @app.post("/api/ingest/manual")
-def ingest_manual(request: ManualIngestRequest):
+def ingest_manual(request: ManualIngestRequest, background_tasks: BackgroundTasks):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
-        
+
     state_path = "gemini_state.json"
     if not os.path.exists(state_path):
         raise HTTPException(status_code=400, detail="gemini_state.json not found. Please sync first.")
-        
+
     try:
         with open(state_path, "r", encoding="utf-8") as f:
             state = json.load(f)
             vector_store_name = state.get("file_search_store_name")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
-        
+
     if not vector_store_name:
         raise HTTPException(status_code=400, detail="Gemini Vector Store not initialized in state.json.")
-    
+
     slug_title = re.sub(r'[^a-zA-Z0-9\s-]', '', request.title).strip().replace(' ', '-')
     slug_title = re.sub(r'-+', '-', slug_title).lower()
-    
+
     article_id = random.randint(100000, 999999)
     slug = f"manual-{article_id}-{slug_title}"[:80]
-    
+
     output_dir = "data/articles"
     os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, f"{slug}.md")
-    
+
     from datetime import datetime, timezone
     updated_at = datetime.now(timezone.utc).isoformat()
-    
+
     header = f"---\ntitle: \"{request.title}\"\nid: {article_id}\nupdated_at: \"{updated_at}\"\n---\n\n"
     citation_block = f"\n\n---\nArticle URL: #\n"
     full_content = header + request.content + citation_block
-    
+
     content_hash = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
-    
+
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(full_content)
-        
-    try:
-        manager = AssistantManager(api_key=api_key)
-        metadata = {
-            "article_id": article_id,
-            "title": request.title,
-            "source_url": "#",
-            "updated_at": updated_at,
-            "synced_at": updated_at,
-        }
-        result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
-        return {
-            "status": "success",
-            "slug": slug,
-            "result": result,
-            "article_id": article_id
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to sync manual article to Gemini: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    _set_job(job_id, status="pending", slug=slug, title=request.title, article_id=article_id)
+
+    def _do_upload():
+        try:
+            _set_job(job_id, status="uploading")
+            manager = AssistantManager(api_key=api_key)
+            metadata = {
+                "article_id": article_id,
+                "title": request.title,
+                "source_url": "#",
+                "updated_at": updated_at,
+                "synced_at": updated_at,
+            }
+            result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
+            manager.save_state_if_dirty()
+            _set_job(job_id, status="done", result=result)
+        except Exception as e:
+            _set_job(job_id, status="error", error=str(e))
+
+    background_tasks.add_task(_do_upload)
+    return {"status": "accepted", "job_id": job_id, "slug": slug, "article_id": article_id}
 
 class UrlIngestRequest(BaseModel):
     url: str
 
 @app.post("/api/ingest/url")
-def ingest_url(request: UrlIngestRequest):
+def ingest_url(request: UrlIngestRequest, background_tasks: BackgroundTasks):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
-        
+
     state_path = "gemini_state.json"
     if not os.path.exists(state_path):
         raise HTTPException(status_code=400, detail="gemini_state.json not found. Please sync first.")
-        
+
     try:
         with open(state_path, "r", encoding="utf-8") as f:
             state = json.load(f)
             vector_store_name = state.get("file_search_store_name")
-            
+
             # Check for duplicate ingestion URL
             target_url = request.url.strip().lower()
             for slug, meta in state.get("articles", {}).items():
@@ -661,23 +593,23 @@ def ingest_url(request: UrlIngestRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
-        
+
     if not vector_store_name:
         raise HTTPException(status_code=400, detail="Gemini Vector Store not initialized in state.json.")
-        
-    import requests
+
+    import requests as http_requests
     from bs4 import BeautifulSoup
     from markdownify import markdownify as md
-    
+
     try:
-        res = requests.get(request.url, timeout=15)
+        res = http_requests.get(request.url, timeout=15)
         res.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
-        
+
     soup = BeautifulSoup(res.text, "html.parser")
     title = soup.title.string.strip() if soup.title else "Scraped Article"
-    
+
     body_content = ""
     body_tag = soup.body
     if body_tag:
@@ -686,111 +618,121 @@ def ingest_url(request: UrlIngestRequest):
         body_content = md(str(body_tag), heading_style="ATX").strip()
     else:
         body_content = md(res.text, heading_style="ATX").strip()
-        
+
     article_id = random.randint(100000, 999999)
     slug_title = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().replace(' ', '-')
     slug_title = re.sub(r'-+', '-', slug_title).lower()
     slug = f"url-{article_id}-{slug_title}"[:80]
-    
+
     output_dir = "data/articles"
     os.makedirs(output_dir, exist_ok=True)
     filepath = os.path.join(output_dir, f"{slug}.md")
-    
+
     from datetime import datetime, timezone
     updated_at = datetime.now(timezone.utc).isoformat()
-    
+
     header = f"---\ntitle: \"{title}\"\nid: {article_id}\nupdated_at: \"{updated_at}\"\n---\n\n"
     citation_block = f"\n\n---\nArticle URL: {request.url}\n"
     full_content = header + body_content + citation_block
-    
+
     content_hash = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
-    
+
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(full_content)
-        
-    try:
-        manager = AssistantManager(api_key=api_key)
-        metadata = {
-            "article_id": article_id,
-            "title": title,
-            "source_url": request.url,
-            "updated_at": updated_at,
-            "synced_at": updated_at,
-        }
-        result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
-        return {
-            "status": "success",
-            "slug": slug,
-            "result": result,
-            "article_id": article_id
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to sync scraped URL article to Gemini: {str(e)}")
+
+    job_id = str(uuid.uuid4())
+    _set_job(job_id, status="pending", slug=slug, title=title, article_id=article_id)
+
+    def _do_upload():
+        try:
+            _set_job(job_id, status="uploading")
+            manager = AssistantManager(api_key=api_key)
+            metadata = {
+                "article_id": article_id,
+                "title": title,
+                "source_url": request.url,
+                "updated_at": updated_at,
+                "synced_at": updated_at,
+            }
+            result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
+            manager.save_state_if_dirty()
+            _set_job(job_id, status="done", result=result)
+        except Exception as e:
+            _set_job(job_id, status="error", error=str(e))
+
+    background_tasks.add_task(_do_upload)
+    return {"status": "accepted", "job_id": job_id, "slug": slug, "title": title, "article_id": article_id}
 
 @app.post("/api/ingest/file")
-def ingest_file(file: UploadFile = File(...)):
+def ingest_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY environment variable not set.")
-        
+
     state_path = "gemini_state.json"
     if not os.path.exists(state_path):
         raise HTTPException(status_code=400, detail="gemini_state.json not found. Please sync first.")
-        
+
     try:
         with open(state_path, "r", encoding="utf-8") as f:
             state = json.load(f)
             vector_store_name = state.get("file_search_store_name")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read sync state: {e}")
-        
+
     if not vector_store_name:
         raise HTTPException(status_code=400, detail="Gemini Vector Store not initialized in state.json.")
-        
+
     output_dir = "data/articles"
     os.makedirs(output_dir, exist_ok=True)
-    
+
     article_id = random.randint(100000, 999999)
-    
+
     filename = file.filename or "uploaded-file.txt"
     name_part, ext = os.path.splitext(filename)
     if ext.lower() not in [".txt", ".md", ".pdf"]:
         raise HTTPException(status_code=400, detail="Unsupported file format. Only PDF, MD, TXT are supported.")
-        
+
     slug_name = re.sub(r'[^a-zA-Z0-9\s-]', '', name_part).strip().replace(' ', '-')
     slug_name = re.sub(r'-+', '-', slug_name).lower()
     slug = f"file-{article_id}-{slug_name}"[:80]
-    
+
     saved_filename = f"{slug}{ext}"
     filepath = os.path.join(output_dir, saved_filename)
-    
+
     contents = file.file.read()
     content_hash = hashlib.sha256(contents).hexdigest()
-    
+
     file.file.seek(0)
     with open(filepath, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-        
-    try:
-        manager = AssistantManager(api_key=api_key)
-        from datetime import datetime, timezone
-        updated_at = datetime.now(timezone.utc).isoformat()
-        metadata = {
-            "article_id": article_id,
-            "title": name_part,
-            "source_url": "#",
-            "updated_at": updated_at,
-            "synced_at": updated_at,
-        }
-        result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
-        return {
-            "status": "success",
-            "slug": slug,
-            "result": result,
-            "article_id": article_id
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to sync uploaded file to Gemini: {str(e)}")
+
+    from datetime import datetime, timezone
+    updated_at = datetime.now(timezone.utc).isoformat()
+
+    job_id = str(uuid.uuid4())
+    _set_job(job_id, status="pending", slug=slug, title=name_part, article_id=article_id)
+
+    def _do_upload():
+        try:
+            _set_job(job_id, status="uploading")
+            manager = AssistantManager(api_key=api_key)
+            metadata = {
+                "article_id": article_id,
+                "title": name_part,
+                "source_url": "#",
+                "updated_at": updated_at,
+                "synced_at": updated_at,
+            }
+            result = manager.sync_article(slug, filepath, content_hash, vector_store_name, metadata)
+            manager.save_state_if_dirty()
+            _set_job(job_id, status="done", result=result)
+        except Exception as e:
+            _set_job(job_id, status="error", error=str(e))
+
+    background_tasks.add_task(_do_upload)
+    return {"status": "accepted", "job_id": job_id, "slug": slug, "title": name_part, "article_id": article_id}
+
 
 # Mount static files (HTML, JS, CSS) from the compiled React Vite build
 app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
