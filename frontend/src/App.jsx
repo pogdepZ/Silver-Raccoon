@@ -981,8 +981,20 @@ function App() {
       clearInterval(visualInterval);
 
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.detail || 'Failed to ingest document');
+        let errMsg = 'Failed to ingest document';
+        try {
+          const errData = await res.json();
+          errMsg = errData.detail || 'Failed to ingest document';
+        } catch (jsonErr) {
+          try {
+            const text = await res.text();
+            const match = text.match(/<title>(.*?)<\/title>/i) || text.match(/<h1>(.*?)<\/h1>/i);
+            errMsg = match ? match[1] : `Server error (${res.status})`;
+          } catch (txtErr) {
+            errMsg = `Server error (${res.status})`;
+          }
+        }
+        throw new Error(errMsg);
       }
 
       const data = await res.json();
@@ -1160,8 +1172,20 @@ function App() {
         clearInterval(visualInterval);
         
         if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || 'Failed to ingest');
+          let errMsg = 'Failed to ingest';
+          try {
+            const errData = await res.json();
+            errMsg = errData.detail || 'Failed to ingest';
+          } catch (jsonErr) {
+            try {
+              const text = await res.text();
+              const match = text.match(/<title>(.*?)<\/title>/i) || text.match(/<h1>(.*?)<\/h1>/i);
+              errMsg = match ? match[1] : `Server error (${res.status})`;
+            } catch (txtErr) {
+              errMsg = `Server error (${res.status})`;
+            }
+          }
+          throw new Error(errMsg);
         }
         
         const data = await res.json();
