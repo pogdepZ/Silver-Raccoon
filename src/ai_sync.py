@@ -110,7 +110,7 @@ class AssistantManager:
         self.save_state()
         return self.state["model"]
 
-    def _wait_for_operation(self, operation, timeout_seconds=45, poll_seconds=5):
+    def _wait_for_operation(self, operation, timeout_seconds=300, poll_seconds=5):
         deadline = time.time() + timeout_seconds
         while not getattr(operation, "done", False):
             if time.time() >= deadline:
